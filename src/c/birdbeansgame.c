@@ -1,0 +1,489 @@
+#include <pebble.h>
+#include <stdlib.h>
+#include <math.h>
+
+// Game constants
+#define GAME_WIDTH 20
+#define GAME_HEIGHT 20
+#define BLOCK_SIZE 8
+#define PYORO_SIZE 6
+#define BEAN_SIZE 4
+#define TONGUE_WIDTH 2
+#define TONGUE_SPEED 15.0f
+#define BEAN_SPEED 1.8f
+#define PYORO_SPEED 25.0f
+#define BEAN_SPAWN_FREQUENCY 2.0f
+#define SPEED_ACCELERATION 0.01f
+
+// Game state
+typedef struct {
+  float x, y;
+  int direction; // 1 = right, -1 = left
+  bool moving;
+  bool dead;
+  struct {
+    bool active;
+    float x, y;
+    int direction;
+    bool going_back;
+    bool caught_bean;
+  } tongue;
+} Pyoro;
+
+typedef struct {
+  float x, y;
+  float speed;
+  bool active;
+  bool caught;
+} Bean;
+
+typedef struct {
+  bool exists;
+} Block;
+
+typedef enum {
+  GAME_STATE_MENU,
+  GAME_STATE_PLAYING,
+  GAME_STATE_GAME_OVER
+} GameState;
+
+typedef struct {
+  GameState state;
+  Pyoro pyoro;
+  Bean beans[5]; // Max 5 beans on screen
+  Block blocks[GAME_WIDTH];
+  int score;
+  float game_speed;
+  float bean_spawn_timer;
+  bool game_paused;
+} Game;
+
+static Window *s_window;
+static Layer *s_game_layer;
+static TextLayer *s_score_layer;
+static TextLayer *s_game_over_layer;
+static AppTimer *s_game_timer;
+static Game s_game;
+
+// Forward declarations
+static void game_update(void *data);
+static void game_layer_update_callback(Layer *layer, GContext *ctx);
+static void init_game(void);
+static void reset_game(void);
+static void spawn_bean(void);
+static void update_game(float delta_time);
+static bool check_collision(float x1, float y1, float w1, float h1,
+                         float x2, float y2, float w2, float h2);
+
+// Initialize game
+static void init_game(void) {
+  s_game.state = GAME_STATE_MENU;
+  s_game.score = 0;
+  s_game.game_speed = 1.0f;
+  s_game.bean_spawn_timer = 0.0f;
+  s_game.game_paused = false;
+  
+  // Initialize Pyoro
+  s_game.pyoro.x = GAME_WIDTH / 2.0f;
+  s_game.pyoro.y = GAME_HEIGHT - 2.0f;
+  s_game.pyoro.direction = 1;
+  s_game.pyoro.moving = false;
+  s_game.pyoro.dead = false;
+  s_game.pyoro.tongue.active = false;
+  
+  // Initialize blocks
+  for (int i = 0; i < GAME_WIDTH; i++) {
+    s_game.blocks[i].exists = true;
+  }
+  
+  // Initialize beans
+  for (int i = 0; i < 5; i++) {
+    s_game.beans[i].active = false;
+  }
+}
+
+static void reset_game(void) {
+  init_game();
+  s_game.state = GAME_STATE_PLAYING;
+  layer_mark_dirty(s_game_layer);
+}
+
+// Spawn a new bean
+static void spawn_bean(void) {
+  for (int i = 0; i < 5; i++) {
+    if (!s_game.beans[i].active) {
+      s_game.beans[i].x = (rand() % GAME_WIDTH) + 0.5f;
+      s_game.beans[i].y = 0.0f;
+      s_game.beans[i].speed = (rand() % 100) / 100.0f * 1.0f + 0.5f;
+      s_game.beans[i].active = true;
+      s_game.beans[i].caught = false;
+      break;
+    }
+  }
+}
+
+// Collision detection
+static bool check_collision(float x1, float y1, float w1, float h1,
+                            float x2, float y2, float w2, float h2) {
+  return (x1 - w1/2 < x2 + w2/2) &&
+         (x1 + w1/2 > x2 - w2/2) &&
+         (y1 - h1/2 < y2 + h2/2) &&
+         (y1 + h1/2 > y2 - h2/2);
+}
+
+// Update game logic
+static void update_game(float delta_time) {
+  if (s_game.state != GAME_STATE_PLAYING || s_game.game_paused || s_game.pyoro.dead) {
+    return;
+  }
+  
+  float dt = delta_time * s_game.game_speed;
+  
+  // Update game speed
+  s_game.game_speed += dt * SPEED_ACCELERATION;
+  
+  // Update Pyoro movement (stop if tongue is active)
+  if (s_game.pyoro.tongue.active) {
+    s_game.pyoro.moving = false;
+  }
+  
+  if (s_game.pyoro.moving && !s_game.pyoro.tongue.active) {
+    float move_speed = PYORO_SPEED * dt;
+    float new_x = s_game.pyoro.x + s_game.pyoro.direction * move_speed;
+    
+    // Check boundaries
+    if (new_x < PYORO_SIZE / 2.0f) {
+      new_x = PYORO_SIZE / 2.0f;
+    } else if (new_x > GAME_WIDTH - PYORO_SIZE / 2.0f) {
+      new_x = GAME_WIDTH - PYORO_SIZE / 2.0f;
+    }
+    
+    // Check for holes in blocks
+    int block_left = (int)(new_x - PYORO_SIZE / 2.0f);
+    int block_right = (int)(new_x + PYORO_SIZE / 2.0f);
+    bool can_move = true;
+    
+    for (int i = block_left; i <= block_right && i < GAME_WIDTH; i++) {
+      if (i >= 0 && !s_game.blocks[i].exists) {
+        can_move = false;
+        break;
+      }
+    }
+    
+    if (can_move) {
+      s_game.pyoro.x = new_x;
+    }
+  }
+  
+  // Update tongue
+  if (s_game.pyoro.tongue.active) {
+    if (s_game.pyoro.tongue.going_back) {
+      // Tongue retracting
+      float retract_speed = TONGUE_SPEED * 2.0f * dt;
+      s_game.pyoro.tongue.x -= s_game.pyoro.tongue.direction * retract_speed;
+      s_game.pyoro.tongue.y += retract_speed;
+      
+      if (s_game.pyoro.tongue.caught_bean) {
+        // Move caught bean with tongue
+        for (int i = 0; i < 5; i++) {
+          if (s_game.beans[i].active && s_game.beans[i].caught) {
+            s_game.beans[i].x = s_game.pyoro.tongue.x;
+            s_game.beans[i].y = s_game.pyoro.tongue.y;
+            break;
+          }
+        }
+      }
+      
+      // Check if tongue is back
+      if (s_game.pyoro.tongue.y >= s_game.pyoro.y) {
+        if (s_game.pyoro.tongue.caught_bean) {
+          // Calculate score based on height
+          int score_add = 10;
+          if (s_game.pyoro.tongue.y < GAME_HEIGHT * 0.2f) {
+            score_add = 1000;
+          } else if (s_game.pyoro.tongue.y < GAME_HEIGHT * 0.4f) {
+            score_add = 300;
+          } else if (s_game.pyoro.tongue.y < GAME_HEIGHT * 0.6f) {
+            score_add = 100;
+          } else if (s_game.pyoro.tongue.y < GAME_HEIGHT * 0.8f) {
+            score_add = 50;
+          }
+          s_game.score += score_add;
+          
+          // Remove caught bean
+          for (int i = 0; i < 5; i++) {
+            if (s_game.beans[i].active && s_game.beans[i].caught) {
+              s_game.beans[i].active = false;
+              break;
+            }
+          }
+        }
+        s_game.pyoro.tongue.active = false;
+      }
+    } else {
+      // Tongue extending
+      float extend_speed = TONGUE_SPEED * dt;
+      s_game.pyoro.tongue.x += s_game.pyoro.tongue.direction * extend_speed;
+      s_game.pyoro.tongue.y -= extend_speed;
+      
+      // Check for bean collision
+      for (int i = 0; i < 5; i++) {
+        if (s_game.beans[i].active && !s_game.beans[i].caught) {
+          if (check_collision(s_game.pyoro.tongue.x, s_game.pyoro.tongue.y,
+                             TONGUE_WIDTH, TONGUE_WIDTH,
+                             s_game.beans[i].x, s_game.beans[i].y,
+                             BEAN_SIZE, BEAN_SIZE)) {
+            s_game.beans[i].caught = true;
+            s_game.pyoro.tongue.caught_bean = true;
+            s_game.pyoro.tongue.going_back = true;
+            break;
+          }
+        }
+      }
+      
+      // Check if tongue is out of bounds
+      if (s_game.pyoro.tongue.x < 0 || s_game.pyoro.tongue.x > GAME_WIDTH ||
+          s_game.pyoro.tongue.y < 0) {
+        s_game.pyoro.tongue.going_back = true;
+      }
+    }
+  }
+  
+  // Update beans
+  for (int i = 0; i < 5; i++) {
+    if (s_game.beans[i].active && !s_game.beans[i].caught) {
+      s_game.beans[i].y += BEAN_SPEED * s_game.beans[i].speed * dt * s_game.game_speed;
+      
+      // Check collision with Pyoro
+      if (!s_game.pyoro.dead && !s_game.pyoro.tongue.active) {
+        if (check_collision(s_game.pyoro.x, s_game.pyoro.y,
+                           PYORO_SIZE, PYORO_SIZE,
+                           s_game.beans[i].x, s_game.beans[i].y,
+                           BEAN_SIZE, BEAN_SIZE)) {
+          // Game over
+          s_game.pyoro.dead = true;
+          s_game.state = GAME_STATE_GAME_OVER;
+          break;
+        }
+      }
+      
+      // Check collision with ground/blocks
+      if (s_game.beans[i].y >= GAME_HEIGHT - 1.0f) {
+        int block_index = (int)s_game.beans[i].x;
+        if (block_index >= 0 && block_index < GAME_WIDTH) {
+          if (s_game.blocks[block_index].exists) {
+            s_game.blocks[block_index].exists = false;
+          }
+        }
+        s_game.beans[i].active = false;
+      }
+    }
+  }
+  
+  // Spawn new beans
+  s_game.bean_spawn_timer += dt;
+  if (s_game.bean_spawn_timer >= BEAN_SPAWN_FREQUENCY / s_game.game_speed) {
+    spawn_bean();
+    s_game.bean_spawn_timer = 0.0f;
+  }
+  
+  // Update score display
+  static char score_text[20];
+  snprintf(score_text, sizeof(score_text), "Score: %d", s_game.score);
+  text_layer_set_text(s_score_layer, score_text);
+  
+  layer_mark_dirty(s_game_layer);
+}
+
+// Render game
+static void game_layer_update_callback(Layer *layer, GContext *ctx) {
+  GRect bounds = layer_get_bounds(layer);
+  int screen_width = bounds.size.w;
+  int screen_height = bounds.size.h;
+  
+  // Calculate scaling
+  int game_pixel_width = screen_width;
+  int game_pixel_height = screen_height - 20; // Reserve space for score
+  float scale_x = (float)game_pixel_width / GAME_WIDTH;
+  float scale_y = (float)game_pixel_height / GAME_HEIGHT;
+  
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_fill_rect(ctx, bounds, 0, GCornerNone);
+  
+  if (s_game.state == GAME_STATE_MENU) {
+    graphics_context_set_text_color(ctx, GColorWhite);
+    graphics_draw_text(ctx, "PYORO", fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
+                      GRect(0, screen_height/2 - 20, screen_width, 30),
+                      GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+    graphics_draw_text(ctx, "Press SELECT", fonts_get_system_font(FONT_KEY_GOTHIC_18),
+                      GRect(0, screen_height/2 + 10, screen_width, 20),
+                      GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+    return;
+  }
+  
+  if (s_game.state == GAME_STATE_GAME_OVER) {
+    graphics_context_set_text_color(ctx, GColorWhite);
+    graphics_draw_text(ctx, "GAME OVER", fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
+                      GRect(0, screen_height/2 - 20, screen_width, 30),
+                      GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+    static char final_score[30];
+    snprintf(final_score, sizeof(final_score), "Score: %d", s_game.score);
+    graphics_draw_text(ctx, final_score, fonts_get_system_font(FONT_KEY_GOTHIC_18),
+                      GRect(0, screen_height/2 + 10, screen_width, 20),
+                      GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+    return;
+  }
+  
+  // Draw blocks
+  graphics_context_set_fill_color(ctx, GColorDarkGray);
+  for (int i = 0; i < GAME_WIDTH; i++) {
+    if (s_game.blocks[i].exists) {
+      int x = (int)(i * scale_x);
+      int y = (int)((GAME_HEIGHT - 1) * scale_y);
+      int w = (int)scale_x;
+      int h = (int)scale_y;
+      graphics_fill_rect(ctx, GRect(x, y, w, h), 0, GCornerNone);
+    }
+  }
+  
+  // Draw Pyoro
+  if (!s_game.pyoro.dead) {
+    graphics_context_set_fill_color(ctx, GColorRed);
+    int pyoro_x = (int)((s_game.pyoro.x - PYORO_SIZE/2.0f) * scale_x);
+    int pyoro_y = (int)((s_game.pyoro.y - PYORO_SIZE/2.0f) * scale_y);
+    int pyoro_w = (int)(PYORO_SIZE * scale_x);
+    int pyoro_h = (int)(PYORO_SIZE * scale_y);
+    graphics_fill_rect(ctx, GRect(pyoro_x, pyoro_y, pyoro_w, pyoro_h), 0, GCornerNone);
+  }
+  
+  // Draw tongue
+  if (s_game.pyoro.tongue.active) {
+    graphics_context_set_fill_color(ctx, GColorYellow);
+    int tongue_x = (int)((s_game.pyoro.tongue.x - TONGUE_WIDTH/2.0f) * scale_x);
+    int tongue_y = (int)((s_game.pyoro.tongue.y - TONGUE_WIDTH/2.0f) * scale_y);
+    int tongue_w = (int)(TONGUE_WIDTH * scale_x);
+    int tongue_h = (int)(TONGUE_WIDTH * scale_y);
+    graphics_fill_rect(ctx, GRect(tongue_x, tongue_y, tongue_w, tongue_h), 0, GCornerNone);
+  }
+  
+  // Draw beans
+  graphics_context_set_fill_color(ctx, GColorGreen);
+  for (int i = 0; i < 5; i++) {
+    if (s_game.beans[i].active) {
+      int bean_x = (int)((s_game.beans[i].x - BEAN_SIZE/2.0f) * scale_x);
+      int bean_y = (int)((s_game.beans[i].y - BEAN_SIZE/2.0f) * scale_y);
+      int bean_w = (int)(BEAN_SIZE * scale_x);
+      int bean_h = (int)(BEAN_SIZE * scale_y);
+      graphics_fill_rect(ctx, GRect(bean_x, bean_y, bean_w, bean_h), 0, GCornerNone);
+    }
+  }
+}
+
+// Game timer callback
+static void game_update(void *data) {
+  update_game(0.016f); // ~60 FPS
+  s_game_timer = app_timer_register(16, game_update, NULL);
+}
+
+// Button handlers
+static void prv_select_click_handler(ClickRecognizerRef recognizer, void *context) {
+  if (s_game.state == GAME_STATE_MENU) {
+    reset_game();
+    s_game_timer = app_timer_register(16, game_update, NULL);
+  } else if (s_game.state == GAME_STATE_GAME_OVER) {
+    s_game.state = GAME_STATE_MENU;
+    layer_mark_dirty(s_game_layer);
+  } else if (s_game.state == GAME_STATE_PLAYING && !s_game.pyoro.dead) {
+    // Extend tongue (stops movement)
+    if (!s_game.pyoro.tongue.active) {
+      s_game.pyoro.moving = false;
+      s_game.pyoro.tongue.active = true;
+      s_game.pyoro.tongue.x = s_game.pyoro.x + (PYORO_SIZE/2.0f + 0.6f) * s_game.pyoro.direction;
+      s_game.pyoro.tongue.y = s_game.pyoro.y - PYORO_SIZE/2.0f + 0.6f;
+      s_game.pyoro.tongue.direction = s_game.pyoro.direction;
+      s_game.pyoro.tongue.going_back = false;
+      s_game.pyoro.tongue.caught_bean = false;
+    }
+  }
+}
+
+static void prv_up_click_handler(ClickRecognizerRef recognizer, void *context) {
+  if (s_game.state == GAME_STATE_PLAYING && !s_game.pyoro.dead && !s_game.pyoro.tongue.active) {
+    s_game.pyoro.direction = -1;
+    s_game.pyoro.moving = true;
+  }
+}
+
+static void prv_down_click_handler(ClickRecognizerRef recognizer, void *context) {
+  if (s_game.state == GAME_STATE_PLAYING && !s_game.pyoro.dead && !s_game.pyoro.tongue.active) {
+    s_game.pyoro.direction = 1;
+    s_game.pyoro.moving = true;
+  }
+}
+
+static void prv_click_config_provider(void *context) {
+  window_single_click_subscribe(BUTTON_ID_SELECT, prv_select_click_handler);
+  window_single_click_subscribe(BUTTON_ID_UP, prv_up_click_handler);
+  window_single_repeating_click_subscribe(BUTTON_ID_UP, 100, prv_up_click_handler);
+  window_single_click_subscribe(BUTTON_ID_DOWN, prv_down_click_handler);
+  window_single_repeating_click_subscribe(BUTTON_ID_DOWN, 100, prv_down_click_handler);
+}
+
+static void prv_window_load(Window *window) {
+  Layer *window_layer = window_get_root_layer(window);
+  GRect bounds = layer_get_bounds(window_layer);
+  
+  // Create game layer
+  s_game_layer = layer_create(bounds);
+  layer_set_update_proc(s_game_layer, game_layer_update_callback);
+  layer_add_child(window_layer, s_game_layer);
+  
+  // Create score layer
+  s_score_layer = text_layer_create(GRect(0, 0, bounds.size.w, 20));
+  text_layer_set_text(s_score_layer, "Score: 0");
+  text_layer_set_text_alignment(s_score_layer, GTextAlignmentCenter);
+  text_layer_set_background_color(s_score_layer, GColorClear);
+  text_layer_set_text_color(s_score_layer, GColorWhite);
+  layer_add_child(window_layer, text_layer_get_layer(s_score_layer));
+  
+  // Create game over layer (initially hidden)
+  s_game_over_layer = text_layer_create(GRect(0, bounds.size.h/2 - 20, bounds.size.w, 40));
+  text_layer_set_text_alignment(s_game_over_layer, GTextAlignmentCenter);
+  text_layer_set_background_color(s_game_over_layer, GColorClear);
+  text_layer_set_text_color(s_game_over_layer, GColorWhite);
+  layer_add_child(window_layer, text_layer_get_layer(s_game_over_layer));
+  
+  init_game();
+}
+
+static void prv_window_unload(Window *window) {
+  if (s_game_timer) {
+    app_timer_cancel(s_game_timer);
+    s_game_timer = NULL;
+  }
+  layer_destroy(s_game_layer);
+  text_layer_destroy(s_score_layer);
+  text_layer_destroy(s_game_over_layer);
+}
+
+static void prv_init(void) {
+  s_window = window_create();
+  window_set_click_config_provider(s_window, prv_click_config_provider);
+  window_set_window_handlers(s_window, (WindowHandlers) {
+    .load = prv_window_load,
+    .unload = prv_window_unload,
+  });
+  const bool animated = true;
+  window_stack_push(s_window, animated);
+}
+
+static void prv_deinit(void) {
+  window_destroy(s_window);
+}
+
+int main(void) {
+  prv_init();
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Pyoro game initialized");
+  app_event_loop();
+  prv_deinit();
+}
