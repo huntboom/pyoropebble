@@ -24,7 +24,13 @@
       "dummy"
     ],
     "resources": {
-      "media": []
+      "media": [
+        {
+          "type": "bitmap",
+          "name": "BACKGROUND_0",
+          "file": "images/background_0.png"
+        }
+      ]
     }
   }
 }

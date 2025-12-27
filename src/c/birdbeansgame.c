@@ -64,6 +64,7 @@ static TextLayer *s_score_layer;
 static TextLayer *s_game_over_layer;
 static AppTimer *s_game_timer;
 static Game s_game;
+static GBitmap *s_background_bitmap;
 
 // Forward declarations
 static void game_update(void *data);
@@ -307,8 +308,13 @@ static void game_layer_update_callback(Layer *layer, GContext *ctx) {
   float scale_x = (float)game_pixel_width / GAME_WIDTH;
   float scale_y = (float)game_pixel_height / GAME_HEIGHT;
   
-  graphics_context_set_fill_color(ctx, GColorBlack);
-  graphics_fill_rect(ctx, bounds, 0, GCornerNone);
+  // Draw background
+  if (s_background_bitmap) {
+    graphics_draw_bitmap_in_rect(ctx, s_background_bitmap, bounds);
+  } else {
+    graphics_context_set_fill_color(ctx, GColorBlack);
+    graphics_fill_rect(ctx, bounds, 0, GCornerNone);
+  }
   
   if (s_game.state == GAME_STATE_MENU) {
     graphics_context_set_text_color(ctx, GColorWhite);
@@ -453,6 +459,9 @@ static void prv_window_load(Window *window) {
   text_layer_set_text_color(s_game_over_layer, GColorWhite);
   layer_add_child(window_layer, text_layer_get_layer(s_game_over_layer));
   
+  // Load background bitmap
+  s_background_bitmap = gbitmap_create_with_resource(RESOURCE_ID_BACKGROUND_0);
+  
   init_game();
 }
 
@@ -460,6 +469,10 @@ static void prv_window_unload(Window *window) {
   if (s_game_timer) {
     app_timer_cancel(s_game_timer);
     s_game_timer = NULL;
+  }
+  if (s_background_bitmap) {
+    gbitmap_destroy(s_background_bitmap);
+    s_background_bitmap = NULL;
   }
   layer_destroy(s_game_layer);
   text_layer_destroy(s_score_layer);
