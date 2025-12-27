@@ -1,0 +1,6 @@
+# Waf lock files
+.lock-waf_*
+
+# Build folder
+build/
+
