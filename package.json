@@ -29,6 +29,11 @@
           "type": "bitmap",
           "name": "BACKGROUND_0",
           "file": "images/background_0.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "PYORO",
+          "file": "images/pyoro_0_eat_0_1.png"
         }
       ]
     }

@@ -65,6 +65,7 @@ static TextLayer *s_game_over_layer;
 static AppTimer *s_game_timer;
 static Game s_game;
 static GBitmap *s_background_bitmap;
+static GBitmap *s_pyoro_bitmap;
 
 // Forward declarations
 static void game_update(void *data);
@@ -353,7 +354,15 @@ static void game_layer_update_callback(Layer *layer, GContext *ctx) {
   }
   
   // Draw Pyoro
-  if (!s_game.pyoro.dead) {
+  if (!s_game.pyoro.dead && s_pyoro_bitmap) {
+    int pyoro_x = (int)((s_game.pyoro.x - PYORO_SIZE/2.0f) * scale_x);
+    int pyoro_y = (int)((s_game.pyoro.y - PYORO_SIZE/2.0f) * scale_y);
+    int pyoro_w = (int)(PYORO_SIZE * scale_x);
+    int pyoro_h = (int)(PYORO_SIZE * scale_y);
+    GRect pyoro_rect = GRect(pyoro_x, pyoro_y, pyoro_w, pyoro_h);
+    graphics_draw_bitmap_in_rect(ctx, s_pyoro_bitmap, pyoro_rect);
+  } else if (!s_game.pyoro.dead) {
+    // Fallback to red rectangle if bitmap not loaded
     graphics_context_set_fill_color(ctx, GColorRed);
     int pyoro_x = (int)((s_game.pyoro.x - PYORO_SIZE/2.0f) * scale_x);
     int pyoro_y = (int)((s_game.pyoro.y - PYORO_SIZE/2.0f) * scale_y);
@@ -462,6 +471,9 @@ static void prv_window_load(Window *window) {
   // Load background bitmap
   s_background_bitmap = gbitmap_create_with_resource(RESOURCE_ID_BACKGROUND_0);
   
+  // Load Pyoro bitmap
+  s_pyoro_bitmap = gbitmap_create_with_resource(RESOURCE_ID_PYORO);
+  
   init_game();
 }
 
@@ -473,6 +485,10 @@ static void prv_window_unload(Window *window) {
   if (s_background_bitmap) {
     gbitmap_destroy(s_background_bitmap);
     s_background_bitmap = NULL;
+  }
+  if (s_pyoro_bitmap) {
+    gbitmap_destroy(s_pyoro_bitmap);
+    s_pyoro_bitmap = NULL;
   }
   layer_destroy(s_game_layer);
   text_layer_destroy(s_score_layer);
