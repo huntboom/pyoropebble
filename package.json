@@ -34,6 +34,16 @@
           "type": "bitmap",
           "name": "PYORO",
           "file": "images/pyoro_0_eat_0_1.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BLOCK",
+          "file": "images/block_0.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "TONGUE",
+          "file": "images/tongue_0_1.png"
         }
       ]
     }

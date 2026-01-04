@@ -66,6 +66,10 @@ static AppTimer *s_game_timer;
 static Game s_game;
 static GBitmap *s_background_bitmap;
 static GBitmap *s_pyoro_bitmap;
+static GBitmap *s_block_bitmap;
+static GBitmap *s_tongue_bitmap;
+static uint32_t s_last_movement_press_frame = 0;
+static uint32_t s_frame_count = 0;
 
 // Forward declarations
 static void game_update(void *data);
@@ -147,6 +151,17 @@ static void update_game(float delta_time) {
   // Update Pyoro movement (stop if tongue is active)
   if (s_game.pyoro.tongue.active) {
     s_game.pyoro.moving = false;
+  }
+  
+  // Increment frame counter
+  s_frame_count++;
+  
+  // Stop moving if button hasn't been pressed recently (button released)
+  // Check if it's been more than ~9 frames (150ms at 60fps) since last press
+  if (s_game.pyoro.moving) {
+    if (s_frame_count - s_last_movement_press_frame > 9) {
+      s_game.pyoro.moving = false;
+    }
   }
   
   if (s_game.pyoro.moving && !s_game.pyoro.tongue.active) {
@@ -342,21 +357,28 @@ static void game_layer_update_callback(Layer *layer, GContext *ctx) {
   }
   
   // Draw blocks
-  graphics_context_set_fill_color(ctx, GColorDarkGray);
   for (int i = 0; i < GAME_WIDTH; i++) {
     if (s_game.blocks[i].exists) {
       int x = (int)(i * scale_x);
-      int y = (int)((GAME_HEIGHT - 1) * scale_y);
+      // Draw blocks at the bottom of the game area (accounting for score layer)
+      int y = 20 + (int)((GAME_HEIGHT - 1) * scale_y);
       int w = (int)scale_x;
       int h = (int)scale_y;
-      graphics_fill_rect(ctx, GRect(x, y, w, h), 0, GCornerNone);
+      GRect block_rect = GRect(x, y, w, h);
+      if (s_block_bitmap) {
+        graphics_draw_bitmap_in_rect(ctx, s_block_bitmap, block_rect);
+      } else {
+        // Fallback to gray rectangle if bitmap not loaded
+        graphics_context_set_fill_color(ctx, GColorDarkGray);
+        graphics_fill_rect(ctx, block_rect, 0, GCornerNone);
+      }
     }
   }
   
   // Draw Pyoro
   if (!s_game.pyoro.dead && s_pyoro_bitmap) {
     int pyoro_x = (int)((s_game.pyoro.x - PYORO_SIZE/2.0f) * scale_x);
-    int pyoro_y = (int)((s_game.pyoro.y - PYORO_SIZE/2.0f) * scale_y);
+    int pyoro_y = 20 + (int)((s_game.pyoro.y - PYORO_SIZE/2.0f) * scale_y);
     int pyoro_w = (int)(PYORO_SIZE * scale_x);
     int pyoro_h = (int)(PYORO_SIZE * scale_y);
     GRect pyoro_rect = GRect(pyoro_x, pyoro_y, pyoro_w, pyoro_h);
@@ -365,7 +387,7 @@ static void game_layer_update_callback(Layer *layer, GContext *ctx) {
     // Fallback to red rectangle if bitmap not loaded
     graphics_context_set_fill_color(ctx, GColorRed);
     int pyoro_x = (int)((s_game.pyoro.x - PYORO_SIZE/2.0f) * scale_x);
-    int pyoro_y = (int)((s_game.pyoro.y - PYORO_SIZE/2.0f) * scale_y);
+    int pyoro_y = 20 + (int)((s_game.pyoro.y - PYORO_SIZE/2.0f) * scale_y);
     int pyoro_w = (int)(PYORO_SIZE * scale_x);
     int pyoro_h = (int)(PYORO_SIZE * scale_y);
     graphics_fill_rect(ctx, GRect(pyoro_x, pyoro_y, pyoro_w, pyoro_h), 0, GCornerNone);
@@ -373,12 +395,18 @@ static void game_layer_update_callback(Layer *layer, GContext *ctx) {
   
   // Draw tongue
   if (s_game.pyoro.tongue.active) {
-    graphics_context_set_fill_color(ctx, GColorYellow);
     int tongue_x = (int)((s_game.pyoro.tongue.x - TONGUE_WIDTH/2.0f) * scale_x);
-    int tongue_y = (int)((s_game.pyoro.tongue.y - TONGUE_WIDTH/2.0f) * scale_y);
+    int tongue_y = 20 + (int)((s_game.pyoro.tongue.y - TONGUE_WIDTH/2.0f) * scale_y);
     int tongue_w = (int)(TONGUE_WIDTH * scale_x);
     int tongue_h = (int)(TONGUE_WIDTH * scale_y);
-    graphics_fill_rect(ctx, GRect(tongue_x, tongue_y, tongue_w, tongue_h), 0, GCornerNone);
+    GRect tongue_rect = GRect(tongue_x, tongue_y, tongue_w, tongue_h);
+    if (s_tongue_bitmap) {
+      graphics_draw_bitmap_in_rect(ctx, s_tongue_bitmap, tongue_rect);
+    } else {
+      // Fallback to yellow rectangle if bitmap not loaded
+      graphics_context_set_fill_color(ctx, GColorYellow);
+      graphics_fill_rect(ctx, tongue_rect, 0, GCornerNone);
+    }
   }
   
   // Draw beans
@@ -386,7 +414,7 @@ static void game_layer_update_callback(Layer *layer, GContext *ctx) {
   for (int i = 0; i < 5; i++) {
     if (s_game.beans[i].active) {
       int bean_x = (int)((s_game.beans[i].x - BEAN_SIZE/2.0f) * scale_x);
-      int bean_y = (int)((s_game.beans[i].y - BEAN_SIZE/2.0f) * scale_y);
+      int bean_y = 20 + (int)((s_game.beans[i].y - BEAN_SIZE/2.0f) * scale_y);
       int bean_w = (int)(BEAN_SIZE * scale_x);
       int bean_h = (int)(BEAN_SIZE * scale_y);
       graphics_fill_rect(ctx, GRect(bean_x, bean_y, bean_w, bean_h), 0, GCornerNone);
@@ -426,6 +454,7 @@ static void prv_up_click_handler(ClickRecognizerRef recognizer, void *context) {
   if (s_game.state == GAME_STATE_PLAYING && !s_game.pyoro.dead && !s_game.pyoro.tongue.active) {
     s_game.pyoro.direction = -1;
     s_game.pyoro.moving = true;
+    s_last_movement_press_frame = s_frame_count;
   }
 }
 
@@ -433,6 +462,7 @@ static void prv_down_click_handler(ClickRecognizerRef recognizer, void *context)
   if (s_game.state == GAME_STATE_PLAYING && !s_game.pyoro.dead && !s_game.pyoro.tongue.active) {
     s_game.pyoro.direction = 1;
     s_game.pyoro.moving = true;
+    s_last_movement_press_frame = s_frame_count;
   }
 }
 
@@ -474,6 +504,12 @@ static void prv_window_load(Window *window) {
   // Load Pyoro bitmap
   s_pyoro_bitmap = gbitmap_create_with_resource(RESOURCE_ID_PYORO);
   
+  // Load block bitmap
+  s_block_bitmap = gbitmap_create_with_resource(RESOURCE_ID_BLOCK);
+  
+  // Load tongue bitmap
+  s_tongue_bitmap = gbitmap_create_with_resource(RESOURCE_ID_TONGUE);
+  
   init_game();
 }
 
@@ -489,6 +525,14 @@ static void prv_window_unload(Window *window) {
   if (s_pyoro_bitmap) {
     gbitmap_destroy(s_pyoro_bitmap);
     s_pyoro_bitmap = NULL;
+  }
+  if (s_block_bitmap) {
+    gbitmap_destroy(s_block_bitmap);
+    s_block_bitmap = NULL;
+  }
+  if (s_tongue_bitmap) {
+    gbitmap_destroy(s_tongue_bitmap);
+    s_tongue_bitmap = NULL;
   }
   layer_destroy(s_game_layer);
   text_layer_destroy(s_score_layer);
