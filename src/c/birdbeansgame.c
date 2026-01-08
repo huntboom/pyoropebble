@@ -6,8 +6,8 @@
 #define GAME_WIDTH 20
 #define GAME_HEIGHT 20
 #define BLOCK_SIZE 8
-#define PYORO_SIZE 6
-#define BEAN_SIZE 4
+#define PYORO_SIZE 3
+#define BEAN_SIZE 2
 #define TONGUE_WIDTH 2
 #define TONGUE_SPEED 15.0f
 #define BEAN_SPEED 1.8f
@@ -377,12 +377,25 @@ static void game_layer_update_callback(Layer *layer, GContext *ctx) {
   
   // Draw Pyoro
   if (!s_game.pyoro.dead && s_pyoro_bitmap) {
-    int pyoro_x = (int)((s_game.pyoro.x - PYORO_SIZE/2.0f) * scale_x);
-    int pyoro_y = 20 + (int)((s_game.pyoro.y - PYORO_SIZE/2.0f) * scale_y);
-    int pyoro_w = (int)(PYORO_SIZE * scale_x);
-    int pyoro_h = (int)(PYORO_SIZE * scale_y);
-    GRect pyoro_rect = GRect(pyoro_x, pyoro_y, pyoro_w, pyoro_h);
-    graphics_draw_bitmap_in_rect(ctx, s_pyoro_bitmap, pyoro_rect);
+    // Calculate desired center position
+    int pyoro_center_x = (int)(s_game.pyoro.x * scale_x);
+    int pyoro_center_y = 20 + (int)(s_game.pyoro.y * scale_y);
+    
+    // Get bitmap size
+    GRect bitmap_bounds = gbitmap_get_bounds(s_pyoro_bitmap);
+    
+    // Position bitmap so its center aligns with desired position
+    // The bitmap will be drawn at its original size, but centered correctly
+    int bitmap_x = pyoro_center_x - bitmap_bounds.size.w / 2;
+    int bitmap_y = pyoro_center_y - bitmap_bounds.size.h / 2;
+    GRect bitmap_rect = GRect(bitmap_x, bitmap_y, bitmap_bounds.size.w, bitmap_bounds.size.h);
+    
+    // Set compositing mode to respect alpha channel/transparency
+    graphics_context_set_compositing_mode(ctx, GCompOpSet);
+    // Draw bitmap - it will be larger than desired but centered correctly
+    graphics_draw_bitmap_in_rect(ctx, s_pyoro_bitmap, bitmap_rect);
+    // Reset compositing mode to default
+    graphics_context_set_compositing_mode(ctx, GCompOpAssign);
   } else if (!s_game.pyoro.dead) {
     // Fallback to red rectangle if bitmap not loaded
     graphics_context_set_fill_color(ctx, GColorRed);
