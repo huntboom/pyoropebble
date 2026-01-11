@@ -408,17 +408,33 @@ static void game_layer_update_callback(Layer *layer, GContext *ctx) {
   
   // Draw tongue
   if (s_game.pyoro.tongue.active) {
-    int tongue_x = (int)((s_game.pyoro.tongue.x - TONGUE_WIDTH/2.0f) * scale_x);
-    int tongue_y = 20 + (int)((s_game.pyoro.tongue.y - TONGUE_WIDTH/2.0f) * scale_y);
-    int tongue_w = (int)(TONGUE_WIDTH * scale_x);
-    int tongue_h = (int)(TONGUE_WIDTH * scale_y);
-    GRect tongue_rect = GRect(tongue_x, tongue_y, tongue_w, tongue_h);
+    // Calculate desired center position
+    int tongue_center_x = (int)(s_game.pyoro.tongue.x * scale_x);
+    int tongue_center_y = 20 + (int)(s_game.pyoro.tongue.y * scale_y);
+    
     if (s_tongue_bitmap) {
+      // Get bitmap size
+      GRect tongue_bitmap_bounds = gbitmap_get_bounds(s_tongue_bitmap);
+      
+      // Position bitmap so its center aligns with desired position
+      int tongue_bitmap_x = tongue_center_x - tongue_bitmap_bounds.size.w / 2;
+      int tongue_bitmap_y = tongue_center_y - tongue_bitmap_bounds.size.h / 2;
+      GRect tongue_rect = GRect(tongue_bitmap_x, tongue_bitmap_y, 
+                                 tongue_bitmap_bounds.size.w, tongue_bitmap_bounds.size.h);
+      
+      // Set compositing mode to respect alpha channel/transparency
+      graphics_context_set_compositing_mode(ctx, GCompOpSet);
       graphics_draw_bitmap_in_rect(ctx, s_tongue_bitmap, tongue_rect);
+      // Reset compositing mode to default
+      graphics_context_set_compositing_mode(ctx, GCompOpAssign);
     } else {
       // Fallback to yellow rectangle if bitmap not loaded
       graphics_context_set_fill_color(ctx, GColorYellow);
-      graphics_fill_rect(ctx, tongue_rect, 0, GCornerNone);
+      int tongue_x = (int)((s_game.pyoro.tongue.x - TONGUE_WIDTH/2.0f) * scale_x);
+      int tongue_y = 20 + (int)((s_game.pyoro.tongue.y - TONGUE_WIDTH/2.0f) * scale_y);
+      int tongue_w = (int)(TONGUE_WIDTH * scale_x);
+      int tongue_h = (int)(TONGUE_WIDTH * scale_y);
+      graphics_fill_rect(ctx, GRect(tongue_x, tongue_y, tongue_w, tongue_h), 0, GCornerNone);
     }
   }
   
