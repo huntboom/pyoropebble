@@ -68,6 +68,7 @@ static GBitmap *s_background_bitmap;
 static GBitmap *s_pyoro_bitmap;
 static GBitmap *s_block_bitmap;
 static GBitmap *s_tongue_bitmap;
+static GBitmap *s_tongue_left_bitmap;
 static uint32_t s_last_movement_press_frame = 0;
 static uint32_t s_frame_count = 0;
 
@@ -412,9 +413,17 @@ static void game_layer_update_callback(Layer *layer, GContext *ctx) {
     int tongue_center_x = (int)(s_game.pyoro.tongue.x * scale_x);
     int tongue_center_y = 20 + (int)(s_game.pyoro.tongue.y * scale_y);
     
-    if (s_tongue_bitmap) {
+    // Select bitmap based on direction (1 = right, -1 = left)
+    GBitmap *tongue_bitmap_to_use = NULL;
+    if (s_game.pyoro.tongue.direction == 1) {
+      tongue_bitmap_to_use = s_tongue_bitmap;
+    } else {
+      tongue_bitmap_to_use = s_tongue_left_bitmap;
+    }
+    
+    if (tongue_bitmap_to_use) {
       // Get bitmap size
-      GRect tongue_bitmap_bounds = gbitmap_get_bounds(s_tongue_bitmap);
+      GRect tongue_bitmap_bounds = gbitmap_get_bounds(tongue_bitmap_to_use);
       
       // Position bitmap so its center aligns with desired position
       int tongue_bitmap_x = tongue_center_x - tongue_bitmap_bounds.size.w / 2;
@@ -424,7 +433,7 @@ static void game_layer_update_callback(Layer *layer, GContext *ctx) {
       
       // Set compositing mode to respect alpha channel/transparency
       graphics_context_set_compositing_mode(ctx, GCompOpSet);
-      graphics_draw_bitmap_in_rect(ctx, s_tongue_bitmap, tongue_rect);
+      graphics_draw_bitmap_in_rect(ctx, tongue_bitmap_to_use, tongue_rect);
       // Reset compositing mode to default
       graphics_context_set_compositing_mode(ctx, GCompOpAssign);
     } else {
@@ -536,8 +545,9 @@ static void prv_window_load(Window *window) {
   // Load block bitmap
   s_block_bitmap = gbitmap_create_with_resource(RESOURCE_ID_BLOCK);
   
-  // Load tongue bitmap
+  // Load tongue bitmaps
   s_tongue_bitmap = gbitmap_create_with_resource(RESOURCE_ID_TONGUE);
+  s_tongue_left_bitmap = gbitmap_create_with_resource(RESOURCE_ID_TONGUE_LEFT);
   
   init_game();
 }
@@ -562,6 +572,10 @@ static void prv_window_unload(Window *window) {
   if (s_tongue_bitmap) {
     gbitmap_destroy(s_tongue_bitmap);
     s_tongue_bitmap = NULL;
+  }
+  if (s_tongue_left_bitmap) {
+    gbitmap_destroy(s_tongue_left_bitmap);
+    s_tongue_left_bitmap = NULL;
   }
   layer_destroy(s_game_layer);
   text_layer_destroy(s_score_layer);
