@@ -403,35 +403,22 @@ static void game_layer_update_callback(Layer *layer, GContext *ctx) {
   
   // Draw Pyoro
   if (!s_game.pyoro.dead) {
-    // Calculate animation frame (cycles: closed -> halfway -> open -> halfway -> closed)
-    // Animation cycles through: 0 (closed), 1 (halfway), 2 (open), 1 (halfway), 0 (closed)...
-    int anim_cycle = (s_frame_count / MOUTH_ANIMATION_SPEED) % (MOUTH_ANIMATION_FRAMES * 2 - 2);
-    int anim_frame;
-    if (anim_cycle < MOUTH_ANIMATION_FRAMES) {
-      anim_frame = anim_cycle; // 0, 1, 2 (closed, halfway, open)
-    } else {
-      anim_frame = (MOUTH_ANIMATION_FRAMES * 2 - 2) - anim_cycle; // 1, 0 (halfway, closed)
-    }
-    
-    // Select bitmap based on direction and animation frame
+    // Select sprite based on tongue state and direction
+    // If tongue is active, show fully open mouth; otherwise show default closed sprite
     GBitmap *pyoro_bitmap = NULL;
-    if (s_game.pyoro.direction == -1) {
-      // Left direction
-      if (anim_frame == 0) {
-        pyoro_bitmap = s_pyoro_left_bitmap;
-      } else if (anim_frame == 1) {
-        pyoro_bitmap = s_pyoro_mouth_halfway_open_left_bitmap;
-      } else {
+    if (s_game.pyoro.tongue.active) {
+      // Tongue is out - show fully open mouth
+      if (s_game.pyoro.direction == -1) {
         pyoro_bitmap = s_pyoro_mouth_open_left_bitmap;
-      }
-    } else {
-      // Right direction
-      if (anim_frame == 0) {
-        pyoro_bitmap = s_pyoro_right_bitmap;
-      } else if (anim_frame == 1) {
-        pyoro_bitmap = s_pyoro_mouth_halfway_open_right_bitmap;
       } else {
         pyoro_bitmap = s_pyoro_mouth_open_right_bitmap;
+      }
+    } else {
+      // Tongue is not active - show default closed sprite
+      if (s_game.pyoro.direction == -1) {
+        pyoro_bitmap = s_pyoro_left_bitmap;
+      } else {
+        pyoro_bitmap = s_pyoro_right_bitmap;
       }
     }
     
