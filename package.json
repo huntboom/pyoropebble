@@ -32,8 +32,33 @@
         },
         {
           "type": "bitmap",
-          "name": "PYORO",
-          "file": "images/pyoro_0_eat_0_1.png"
+          "name": "PYORO_RIGHT",
+          "file": "images/pyororight.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "PYORO_LEFT",
+          "file": "images/pyoroleft.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "PYORO_MOUTH_HALFWAY_OPEN_RIGHT",
+          "file": "images/pyoromouthhalfwayopenright.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "PYORO_MOUTH_HALFWAY_OPEN_LEFT",
+          "file": "images/pyoromouthhalfwayopenleft.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "PYORO_MOUTH_OPEN_RIGHT",
+          "file": "images/pyoromouthopenright.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "PYORO_MOUTH_OPEN_LEFT",
+          "file": "images/pyoromouthopenleft.png"
         },
         {
           "type": "bitmap",
@@ -59,6 +84,16 @@
           "type": "bitmap",
           "name": "TONGUE_BODY_LEFT",
           "file": "images/tonguebodyleft.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "PYORO_DEAD_LEFT",
+          "file": "images/pyorodeadleft.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "PYORO_DEAD_RIGHT",
+          "file": "images/pyorodeadright.png"
         }
       ]
     }

@@ -14,6 +14,9 @@
 #define PYORO_SPEED 25.0f
 #define BEAN_SPAWN_FREQUENCY 2.0f
 #define SPEED_ACCELERATION 0.01f
+#define DEATH_DELAY 1.0f // Delay in seconds before showing game over screen
+#define MOUTH_ANIMATION_FRAMES 3 // Number of animation frames (closed, halfway, open)
+#define MOUTH_ANIMATION_SPEED 10 // Frames per animation cycle (higher = slower)
 
 // Game state
 typedef struct {
@@ -55,6 +58,7 @@ typedef struct {
   int score;
   float game_speed;
   float bean_spawn_timer;
+  float death_timer;
   bool game_paused;
 } Game;
 
@@ -65,7 +69,14 @@ static TextLayer *s_game_over_layer;
 static AppTimer *s_game_timer;
 static Game s_game;
 static GBitmap *s_background_bitmap;
-static GBitmap *s_pyoro_bitmap;
+static GBitmap *s_pyoro_right_bitmap;
+static GBitmap *s_pyoro_left_bitmap;
+static GBitmap *s_pyoro_mouth_halfway_open_right_bitmap;
+static GBitmap *s_pyoro_mouth_halfway_open_left_bitmap;
+static GBitmap *s_pyoro_mouth_open_right_bitmap;
+static GBitmap *s_pyoro_mouth_open_left_bitmap;
+static GBitmap *s_pyoro_dead_left_bitmap;
+static GBitmap *s_pyoro_dead_right_bitmap;
 static GBitmap *s_block_bitmap;
 static GBitmap *s_tongue_bitmap;
 static GBitmap *s_tongue_left_bitmap;
@@ -90,6 +101,7 @@ static void init_game(void) {
   s_game.score = 0;
   s_game.game_speed = 1.0f;
   s_game.bean_spawn_timer = 0.0f;
+  s_game.death_timer = 0.0f;
   s_game.game_paused = false;
   
   // Initialize Pyoro
@@ -142,7 +154,18 @@ static bool check_collision(float x1, float y1, float w1, float h1,
 
 // Update game logic
 static void update_game(float delta_time) {
-  if (s_game.state != GAME_STATE_PLAYING || s_game.game_paused || s_game.pyoro.dead) {
+  if (s_game.state != GAME_STATE_PLAYING || s_game.game_paused) {
+    return;
+  }
+  
+  // Handle death timer
+  if (s_game.pyoro.dead) {
+    s_game.death_timer -= delta_time;
+    if (s_game.death_timer <= 0.0f) {
+      s_game.state = GAME_STATE_GAME_OVER;
+    }
+    // Don't update game logic while dead, but keep rendering
+    layer_mark_dirty(s_game_layer);
     return;
   }
   
@@ -280,9 +303,9 @@ static void update_game(float delta_time) {
                            PYORO_SIZE, PYORO_SIZE,
                            s_game.beans[i].x, s_game.beans[i].y,
                            BEAN_SIZE, BEAN_SIZE)) {
-          // Game over
+          // Pyoro dies - start death timer
           s_game.pyoro.dead = true;
-          s_game.state = GAME_STATE_GAME_OVER;
+          s_game.death_timer = DEATH_DELAY;
           break;
         }
       }
@@ -379,27 +402,98 @@ static void game_layer_update_callback(Layer *layer, GContext *ctx) {
   }
   
   // Draw Pyoro
-  if (!s_game.pyoro.dead && s_pyoro_bitmap) {
-    // Calculate desired center position
-    int pyoro_center_x = (int)(s_game.pyoro.x * scale_x);
-    int pyoro_center_y = 20 + (int)(s_game.pyoro.y * scale_y);
+  if (!s_game.pyoro.dead) {
+    // Calculate animation frame (cycles: closed -> halfway -> open -> halfway -> closed)
+    // Animation cycles through: 0 (closed), 1 (halfway), 2 (open), 1 (halfway), 0 (closed)...
+    int anim_cycle = (s_frame_count / MOUTH_ANIMATION_SPEED) % (MOUTH_ANIMATION_FRAMES * 2 - 2);
+    int anim_frame;
+    if (anim_cycle < MOUTH_ANIMATION_FRAMES) {
+      anim_frame = anim_cycle; // 0, 1, 2 (closed, halfway, open)
+    } else {
+      anim_frame = (MOUTH_ANIMATION_FRAMES * 2 - 2) - anim_cycle; // 1, 0 (halfway, closed)
+    }
     
-    // Get bitmap size
-    GRect bitmap_bounds = gbitmap_get_bounds(s_pyoro_bitmap);
+    // Select bitmap based on direction and animation frame
+    GBitmap *pyoro_bitmap = NULL;
+    if (s_game.pyoro.direction == -1) {
+      // Left direction
+      if (anim_frame == 0) {
+        pyoro_bitmap = s_pyoro_left_bitmap;
+      } else if (anim_frame == 1) {
+        pyoro_bitmap = s_pyoro_mouth_halfway_open_left_bitmap;
+      } else {
+        pyoro_bitmap = s_pyoro_mouth_open_left_bitmap;
+      }
+    } else {
+      // Right direction
+      if (anim_frame == 0) {
+        pyoro_bitmap = s_pyoro_right_bitmap;
+      } else if (anim_frame == 1) {
+        pyoro_bitmap = s_pyoro_mouth_halfway_open_right_bitmap;
+      } else {
+        pyoro_bitmap = s_pyoro_mouth_open_right_bitmap;
+      }
+    }
     
-    // Position bitmap so its center aligns with desired position
-    // The bitmap will be drawn at its original size, but centered correctly
-    int bitmap_x = pyoro_center_x - bitmap_bounds.size.w / 2;
-    int bitmap_y = pyoro_center_y - bitmap_bounds.size.h / 2;
-    GRect bitmap_rect = GRect(bitmap_x, bitmap_y, bitmap_bounds.size.w, bitmap_bounds.size.h);
+    if (pyoro_bitmap) {
+      // Calculate desired center position
+      int pyoro_center_x = (int)(s_game.pyoro.x * scale_x);
+      int pyoro_center_y = 20 + (int)(s_game.pyoro.y * scale_y);
+      
+      // Get bitmap size
+      GRect bitmap_bounds = gbitmap_get_bounds(pyoro_bitmap);
+      
+      // Position bitmap so its center aligns with desired position
+      // The bitmap will be drawn at its original size, but centered correctly
+      int bitmap_x = pyoro_center_x - bitmap_bounds.size.w / 2;
+      int bitmap_y = pyoro_center_y - bitmap_bounds.size.h / 2;
+      GRect bitmap_rect = GRect(bitmap_x, bitmap_y, bitmap_bounds.size.w, bitmap_bounds.size.h);
+      
+      // Set compositing mode to respect alpha channel/transparency
+      graphics_context_set_compositing_mode(ctx, GCompOpSet);
+      // Draw bitmap - it will be larger than desired but centered correctly
+      graphics_draw_bitmap_in_rect(ctx, pyoro_bitmap, bitmap_rect);
+      // Reset compositing mode to default
+      graphics_context_set_compositing_mode(ctx, GCompOpAssign);
+    }
+  } else if (s_game.pyoro.dead) {
+    // Draw death sprite based on direction
+    GBitmap *death_bitmap = NULL;
+    if (s_game.pyoro.direction == -1) {
+      death_bitmap = s_pyoro_dead_left_bitmap;
+    } else {
+      death_bitmap = s_pyoro_dead_right_bitmap;
+    }
     
-    // Set compositing mode to respect alpha channel/transparency
-    graphics_context_set_compositing_mode(ctx, GCompOpSet);
-    // Draw bitmap - it will be larger than desired but centered correctly
-    graphics_draw_bitmap_in_rect(ctx, s_pyoro_bitmap, bitmap_rect);
-    // Reset compositing mode to default
-    graphics_context_set_compositing_mode(ctx, GCompOpAssign);
-  } else if (!s_game.pyoro.dead) {
+    if (death_bitmap) {
+      // Calculate desired center position
+      int pyoro_center_x = (int)(s_game.pyoro.x * scale_x);
+      int pyoro_center_y = 20 + (int)(s_game.pyoro.y * scale_y);
+      
+      // Get bitmap size
+      GRect bitmap_bounds = gbitmap_get_bounds(death_bitmap);
+      
+      // Position bitmap so its center aligns with desired position
+      int bitmap_x = pyoro_center_x - bitmap_bounds.size.w / 2;
+      int bitmap_y = pyoro_center_y - bitmap_bounds.size.h / 2;
+      GRect bitmap_rect = GRect(bitmap_x, bitmap_y, bitmap_bounds.size.w, bitmap_bounds.size.h);
+      
+      // Set compositing mode to respect alpha channel/transparency
+      graphics_context_set_compositing_mode(ctx, GCompOpSet);
+      // Draw death sprite
+      graphics_draw_bitmap_in_rect(ctx, death_bitmap, bitmap_rect);
+      // Reset compositing mode to default
+      graphics_context_set_compositing_mode(ctx, GCompOpAssign);
+    } else {
+      // Fallback to red rectangle if death bitmap not loaded
+      graphics_context_set_fill_color(ctx, GColorRed);
+      int pyoro_x = (int)((s_game.pyoro.x - PYORO_SIZE/2.0f) * scale_x);
+      int pyoro_y = 20 + (int)((s_game.pyoro.y - PYORO_SIZE/2.0f) * scale_y);
+      int pyoro_w = (int)(PYORO_SIZE * scale_x);
+      int pyoro_h = (int)(PYORO_SIZE * scale_y);
+      graphics_fill_rect(ctx, GRect(pyoro_x, pyoro_y, pyoro_w, pyoro_h), 0, GCornerNone);
+    }
+  } else {
     // Fallback to red rectangle if bitmap not loaded
     graphics_context_set_fill_color(ctx, GColorRed);
     int pyoro_x = (int)((s_game.pyoro.x - PYORO_SIZE/2.0f) * scale_x);
@@ -626,8 +720,15 @@ static void prv_window_load(Window *window) {
   // Load background bitmap
   s_background_bitmap = gbitmap_create_with_resource(RESOURCE_ID_BACKGROUND_0);
   
-  // Load Pyoro bitmap
-  s_pyoro_bitmap = gbitmap_create_with_resource(RESOURCE_ID_PYORO);
+  // Load Pyoro bitmaps
+  s_pyoro_right_bitmap = gbitmap_create_with_resource(RESOURCE_ID_PYORO_RIGHT);
+  s_pyoro_left_bitmap = gbitmap_create_with_resource(RESOURCE_ID_PYORO_LEFT);
+  s_pyoro_mouth_halfway_open_right_bitmap = gbitmap_create_with_resource(RESOURCE_ID_PYORO_MOUTH_HALFWAY_OPEN_RIGHT);
+  s_pyoro_mouth_halfway_open_left_bitmap = gbitmap_create_with_resource(RESOURCE_ID_PYORO_MOUTH_HALFWAY_OPEN_LEFT);
+  s_pyoro_mouth_open_right_bitmap = gbitmap_create_with_resource(RESOURCE_ID_PYORO_MOUTH_OPEN_RIGHT);
+  s_pyoro_mouth_open_left_bitmap = gbitmap_create_with_resource(RESOURCE_ID_PYORO_MOUTH_OPEN_LEFT);
+  s_pyoro_dead_left_bitmap = gbitmap_create_with_resource(RESOURCE_ID_PYORO_DEAD_LEFT);
+  s_pyoro_dead_right_bitmap = gbitmap_create_with_resource(RESOURCE_ID_PYORO_DEAD_RIGHT);
   
   // Load block bitmap
   s_block_bitmap = gbitmap_create_with_resource(RESOURCE_ID_BLOCK);
@@ -650,9 +751,37 @@ static void prv_window_unload(Window *window) {
     gbitmap_destroy(s_background_bitmap);
     s_background_bitmap = NULL;
   }
-  if (s_pyoro_bitmap) {
-    gbitmap_destroy(s_pyoro_bitmap);
-    s_pyoro_bitmap = NULL;
+  if (s_pyoro_right_bitmap) {
+    gbitmap_destroy(s_pyoro_right_bitmap);
+    s_pyoro_right_bitmap = NULL;
+  }
+  if (s_pyoro_left_bitmap) {
+    gbitmap_destroy(s_pyoro_left_bitmap);
+    s_pyoro_left_bitmap = NULL;
+  }
+  if (s_pyoro_mouth_halfway_open_right_bitmap) {
+    gbitmap_destroy(s_pyoro_mouth_halfway_open_right_bitmap);
+    s_pyoro_mouth_halfway_open_right_bitmap = NULL;
+  }
+  if (s_pyoro_mouth_halfway_open_left_bitmap) {
+    gbitmap_destroy(s_pyoro_mouth_halfway_open_left_bitmap);
+    s_pyoro_mouth_halfway_open_left_bitmap = NULL;
+  }
+  if (s_pyoro_mouth_open_right_bitmap) {
+    gbitmap_destroy(s_pyoro_mouth_open_right_bitmap);
+    s_pyoro_mouth_open_right_bitmap = NULL;
+  }
+  if (s_pyoro_mouth_open_left_bitmap) {
+    gbitmap_destroy(s_pyoro_mouth_open_left_bitmap);
+    s_pyoro_mouth_open_left_bitmap = NULL;
+  }
+  if (s_pyoro_dead_left_bitmap) {
+    gbitmap_destroy(s_pyoro_dead_left_bitmap);
+    s_pyoro_dead_left_bitmap = NULL;
+  }
+  if (s_pyoro_dead_right_bitmap) {
+    gbitmap_destroy(s_pyoro_dead_right_bitmap);
+    s_pyoro_dead_right_bitmap = NULL;
   }
   if (s_block_bitmap) {
     gbitmap_destroy(s_block_bitmap);
