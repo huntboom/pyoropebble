@@ -69,6 +69,8 @@ static GBitmap *s_pyoro_bitmap;
 static GBitmap *s_block_bitmap;
 static GBitmap *s_tongue_bitmap;
 static GBitmap *s_tongue_left_bitmap;
+static GBitmap *s_tongue_body_right_bitmap;
+static GBitmap *s_tongue_body_left_bitmap;
 static uint32_t s_last_movement_press_frame = 0;
 static uint32_t s_frame_count = 0;
 
@@ -409,34 +411,119 @@ static void game_layer_update_callback(Layer *layer, GContext *ctx) {
   
   // Draw tongue
   if (s_game.pyoro.tongue.active) {
-    // Calculate desired center position
-    int tongue_center_x = (int)(s_game.pyoro.tongue.x * scale_x);
-    int tongue_center_y = 20 + (int)(s_game.pyoro.tongue.y * scale_y);
+    // Calculate tongue start position (where it leaves the bird)
+    float tongue_start_x = s_game.pyoro.x + (PYORO_SIZE/2.0f + 0.6f) * s_game.pyoro.direction;
+    float tongue_start_y = s_game.pyoro.y - PYORO_SIZE/2.0f + 0.6f;
     
-    // Select bitmap based on direction (1 = right, -1 = left)
-    GBitmap *tongue_bitmap_to_use = NULL;
-    if (s_game.pyoro.tongue.direction == 1) {
-      tongue_bitmap_to_use = s_tongue_bitmap;
-    } else {
-      tongue_bitmap_to_use = s_tongue_left_bitmap;
+    // Calculate tip position
+    float tongue_tip_x = s_game.pyoro.tongue.x;
+    float tongue_tip_y = s_game.pyoro.tongue.y;
+    
+    // Calculate distance and direction from start to tip
+    float dx = tongue_tip_x - tongue_start_x;
+    float dy = tongue_tip_y - tongue_start_y;
+    float distance_sq = dx * dx + dy * dy;
+    float distance = 0.0f;
+    if (distance_sq > 0.01f) {
+      // Simple approximation: distance ≈ max(|dx|, |dy|) + 0.4 * min(|dx|, |dy|)
+      // This avoids sqrtf which has linker issues
+      float adx = dx < 0 ? -dx : dx;
+      float ady = dy < 0 ? -dy : dy;
+      float max_abs = adx > ady ? adx : ady;
+      float min_abs = adx < ady ? adx : ady;
+      distance = max_abs + 0.4f * min_abs;
     }
     
-    if (tongue_bitmap_to_use) {
-      // Get bitmap size
-      GRect tongue_bitmap_bounds = gbitmap_get_bounds(tongue_bitmap_to_use);
-      
-      // Position bitmap so its center aligns with desired position
-      int tongue_bitmap_x = tongue_center_x - tongue_bitmap_bounds.size.w / 2;
-      int tongue_bitmap_y = tongue_center_y - tongue_bitmap_bounds.size.h / 2;
-      GRect tongue_rect = GRect(tongue_bitmap_x, tongue_bitmap_y, 
-                                 tongue_bitmap_bounds.size.w, tongue_bitmap_bounds.size.h);
-      
-      // Set compositing mode to respect alpha channel/transparency
-      graphics_context_set_compositing_mode(ctx, GCompOpSet);
-      graphics_draw_bitmap_in_rect(ctx, tongue_bitmap_to_use, tongue_rect);
-      // Reset compositing mode to default
-      graphics_context_set_compositing_mode(ctx, GCompOpAssign);
+    // Select body and tip bitmaps based on direction (1 = right, -1 = left)
+    GBitmap *tongue_body_bitmap = NULL;
+    GBitmap *tongue_tip_bitmap = NULL;
+    if (s_game.pyoro.tongue.direction == 1) {
+      tongue_body_bitmap = s_tongue_body_right_bitmap;
+      tongue_tip_bitmap = s_tongue_bitmap;
     } else {
+      tongue_body_bitmap = s_tongue_body_left_bitmap;
+      tongue_tip_bitmap = s_tongue_left_bitmap;
+    }
+    
+    // Set compositing mode to respect alpha channel/transparency
+    graphics_context_set_compositing_mode(ctx, GCompOpSet);
+    
+    if (tongue_body_bitmap && distance > 0.05f) {
+      // Get body bitmap size (in pixels)
+      GRect body_bounds = gbitmap_get_bounds(tongue_body_bitmap);
+      int body_width_px = body_bounds.size.w;
+      int body_height_px = body_bounds.size.h;
+      
+      // Get tip bitmap size to know how much space to leave
+      int tip_width_px = 0;
+      if (tongue_tip_bitmap) {
+        GRect tip_bounds = gbitmap_get_bounds(tongue_tip_bitmap);
+        tip_width_px = tip_bounds.size.w;
+      }
+      
+      // Convert to game coordinates for spacing calculations
+      float body_width_game = (float)body_width_px / scale_x;
+      float tip_width_game = (float)tip_width_px / scale_x;
+      
+      // Calculate how many body segments we need
+      // Leave a small gap before the tip (about 1/3 of tip width)
+      float body_distance = distance - tip_width_game * 0.33f;
+      if (body_distance < body_width_game * 0.5f) {
+        // If distance is very small, still draw at least one segment if we have room
+        body_distance = distance * 0.7f; // Use 70% of distance for body
+      }
+      
+      // Always draw at least one segment if distance is significant
+      int num_segments = (int)(body_distance / body_width_game);
+      if (num_segments < 1 && distance > body_width_game * 0.3f) {
+        num_segments = 1;
+      }
+      num_segments += 1; // Add one more to ensure full coverage
+      
+      // Normalize direction vector
+      if (distance > 0.01f) {
+        float inv_distance = 1.0f / distance;
+        float dir_x = dx * inv_distance;
+        float dir_y = dy * inv_distance;
+        
+        // Draw body segments from start towards tip
+        for (int i = 0; i < num_segments; i++) {
+          float segment_pos = (float)i * body_width_game;
+          
+          // Stop before we would overlap the tip
+          if (segment_pos >= body_distance) {
+            break;
+          }
+          
+          float seg_x = tongue_start_x + dir_x * segment_pos;
+          float seg_y = tongue_start_y + dir_y * segment_pos;
+          
+          // Convert to screen coordinates and center the bitmap
+          int seg_screen_x = (int)(seg_x * scale_x) - body_width_px / 2;
+          int seg_screen_y = 20 + (int)(seg_y * scale_y) - body_height_px / 2;
+          
+          GRect body_rect = GRect(seg_screen_x, seg_screen_y, body_width_px, body_height_px);
+          graphics_draw_bitmap_in_rect(ctx, tongue_body_bitmap, body_rect);
+        }
+      }
+    }
+    
+    // Draw tongue tip at the end
+    if (tongue_tip_bitmap) {
+      GRect tip_bounds = gbitmap_get_bounds(tongue_tip_bitmap);
+      int tip_center_x = (int)(tongue_tip_x * scale_x);
+      int tip_center_y = 20 + (int)(tongue_tip_y * scale_y);
+      int tip_x = tip_center_x - tip_bounds.size.w / 2;
+      int tip_y = tip_center_y - tip_bounds.size.h / 2;
+      GRect tip_rect = GRect(tip_x, tip_y, tip_bounds.size.w, tip_bounds.size.h);
+      graphics_draw_bitmap_in_rect(ctx, tongue_tip_bitmap, tip_rect);
+    }
+    
+    // Reset compositing mode to default
+    graphics_context_set_compositing_mode(ctx, GCompOpAssign);
+    
+    // Fallback if bitmaps not loaded
+    if (!tongue_body_bitmap && !tongue_tip_bitmap) {
       // Fallback to yellow rectangle if bitmap not loaded
       graphics_context_set_fill_color(ctx, GColorYellow);
       int tongue_x = (int)((s_game.pyoro.tongue.x - TONGUE_WIDTH/2.0f) * scale_x);
@@ -548,6 +635,8 @@ static void prv_window_load(Window *window) {
   // Load tongue bitmaps
   s_tongue_bitmap = gbitmap_create_with_resource(RESOURCE_ID_TONGUE);
   s_tongue_left_bitmap = gbitmap_create_with_resource(RESOURCE_ID_TONGUE_LEFT);
+  s_tongue_body_right_bitmap = gbitmap_create_with_resource(RESOURCE_ID_TONGUE_BODY_RIGHT);
+  s_tongue_body_left_bitmap = gbitmap_create_with_resource(RESOURCE_ID_TONGUE_BODY_LEFT);
   
   init_game();
 }
@@ -576,6 +665,14 @@ static void prv_window_unload(Window *window) {
   if (s_tongue_left_bitmap) {
     gbitmap_destroy(s_tongue_left_bitmap);
     s_tongue_left_bitmap = NULL;
+  }
+  if (s_tongue_body_right_bitmap) {
+    gbitmap_destroy(s_tongue_body_right_bitmap);
+    s_tongue_body_right_bitmap = NULL;
+  }
+  if (s_tongue_body_left_bitmap) {
+    gbitmap_destroy(s_tongue_body_left_bitmap);
+    s_tongue_body_left_bitmap = NULL;
   }
   layer_destroy(s_game_layer);
   text_layer_destroy(s_score_layer);

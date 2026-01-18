@@ -49,6 +49,16 @@
           "type": "bitmap",
           "name": "TONGUE_LEFT",
           "file": "images/tongueleft.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "TONGUE_BODY_RIGHT",
+          "file": "images/tonguebodyright.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "TONGUE_BODY_LEFT",
+          "file": "images/tonguebodyleft.png"
         }
       ]
     }
