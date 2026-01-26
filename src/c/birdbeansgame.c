@@ -82,8 +82,12 @@ static GBitmap *s_tongue_bitmap;
 static GBitmap *s_tongue_left_bitmap;
 static GBitmap *s_tongue_body_right_bitmap;
 static GBitmap *s_tongue_body_left_bitmap;
+static GBitmap *s_green_bean_left_bitmap;
+static GBitmap *s_green_bean_middle_bitmap;
+static GBitmap *s_green_bean_right_bitmap;
 static uint32_t s_last_movement_press_frame = 0;
 static uint32_t s_frame_count = 0;
+#define BEAN_ANIMATION_SPEED 5 // Frames per animation frame (higher = slower)
 
 // Forward declarations
 static void game_update(void *data);
@@ -616,14 +620,51 @@ static void game_layer_update_callback(Layer *layer, GContext *ctx) {
   }
   
   // Draw beans
-  graphics_context_set_fill_color(ctx, GColorGreen);
   for (int i = 0; i < 5; i++) {
     if (s_game.beans[i].active) {
-      int bean_x = (int)((s_game.beans[i].x - BEAN_SIZE/2.0f) * scale_x);
-      int bean_y = 20 + (int)((s_game.beans[i].y - BEAN_SIZE/2.0f) * scale_y);
-      int bean_w = (int)(BEAN_SIZE * scale_x);
-      int bean_h = (int)(BEAN_SIZE * scale_y);
-      graphics_fill_rect(ctx, GRect(bean_x, bean_y, bean_w, bean_h), 0, GCornerNone);
+      // Calculate animation frame based on frame count and bean index
+      // This creates a staggered animation effect for multiple beans
+      int animation_frame = (s_frame_count / BEAN_ANIMATION_SPEED + i) % 3;
+      
+      GBitmap *bean_bitmap = NULL;
+      switch (animation_frame) {
+        case 0:
+          bean_bitmap = s_green_bean_left_bitmap;
+          break;
+        case 1:
+          bean_bitmap = s_green_bean_middle_bitmap;
+          break;
+        case 2:
+          bean_bitmap = s_green_bean_right_bitmap;
+          break;
+      }
+      
+      if (bean_bitmap) {
+        // Calculate bean center position
+        int bean_center_x = (int)(s_game.beans[i].x * scale_x);
+        int bean_center_y = 20 + (int)(s_game.beans[i].y * scale_y);
+        
+        // Get bitmap size
+        GRect bitmap_bounds = gbitmap_get_bounds(bean_bitmap);
+        
+        // Position bitmap so its center aligns with bean position
+        int bitmap_x = bean_center_x - bitmap_bounds.size.w / 2;
+        int bitmap_y = bean_center_y - bitmap_bounds.size.h / 2;
+        GRect bitmap_rect = GRect(bitmap_x, bitmap_y, bitmap_bounds.size.w, bitmap_bounds.size.h);
+        
+        // Set compositing mode to respect alpha channel/transparency
+        graphics_context_set_compositing_mode(ctx, GCompOpSet);
+        graphics_draw_bitmap_in_rect(ctx, bean_bitmap, bitmap_rect);
+        graphics_context_set_compositing_mode(ctx, GCompOpAssign);
+      } else {
+        // Fallback to green rectangle if bitmap not loaded
+        graphics_context_set_fill_color(ctx, GColorGreen);
+        int bean_x = (int)((s_game.beans[i].x - BEAN_SIZE/2.0f) * scale_x);
+        int bean_y = 20 + (int)((s_game.beans[i].y - BEAN_SIZE/2.0f) * scale_y);
+        int bean_w = (int)(BEAN_SIZE * scale_x);
+        int bean_h = (int)(BEAN_SIZE * scale_y);
+        graphics_fill_rect(ctx, GRect(bean_x, bean_y, bean_w, bean_h), 0, GCornerNone);
+      }
     }
   }
 }
@@ -726,6 +767,11 @@ static void prv_window_load(Window *window) {
   s_tongue_body_right_bitmap = gbitmap_create_with_resource(RESOURCE_ID_TONGUE_BODY_RIGHT);
   s_tongue_body_left_bitmap = gbitmap_create_with_resource(RESOURCE_ID_TONGUE_BODY_LEFT);
   
+  // Load bean bitmaps
+  s_green_bean_left_bitmap = gbitmap_create_with_resource(RESOURCE_ID_GREEN_BEAN_LEFT);
+  s_green_bean_middle_bitmap = gbitmap_create_with_resource(RESOURCE_ID_GREEN_BEAN_MIDDLE);
+  s_green_bean_right_bitmap = gbitmap_create_with_resource(RESOURCE_ID_GREEN_BEAN_RIGHT);
+  
   init_game();
 }
 
@@ -789,6 +835,18 @@ static void prv_window_unload(Window *window) {
   if (s_tongue_body_left_bitmap) {
     gbitmap_destroy(s_tongue_body_left_bitmap);
     s_tongue_body_left_bitmap = NULL;
+  }
+  if (s_green_bean_left_bitmap) {
+    gbitmap_destroy(s_green_bean_left_bitmap);
+    s_green_bean_left_bitmap = NULL;
+  }
+  if (s_green_bean_middle_bitmap) {
+    gbitmap_destroy(s_green_bean_middle_bitmap);
+    s_green_bean_middle_bitmap = NULL;
+  }
+  if (s_green_bean_right_bitmap) {
+    gbitmap_destroy(s_green_bean_right_bitmap);
+    s_green_bean_right_bitmap = NULL;
   }
   layer_destroy(s_game_layer);
   text_layer_destroy(s_score_layer);

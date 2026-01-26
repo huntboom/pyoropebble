@@ -94,6 +94,21 @@
           "type": "bitmap",
           "name": "PYORO_DEAD_RIGHT",
           "file": "images/pyorodeadright.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "GREEN_BEAN_LEFT",
+          "file": "images/greenbeanleft.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "GREEN_BEAN_MIDDLE",
+          "file": "images/greenbeanmiddle.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "GREEN_BEAN_RIGHT",
+          "file": "images/greenbeanright.png"
         }
       ]
     }
