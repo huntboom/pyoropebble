@@ -87,7 +87,7 @@ static GBitmap *s_green_bean_middle_bitmap;
 static GBitmap *s_green_bean_right_bitmap;
 static uint32_t s_last_movement_press_frame = 0;
 static uint32_t s_frame_count = 0;
-#define BEAN_ANIMATION_SPEED 5 // Frames per animation frame (higher = slower)
+#define BEAN_ANIMATION_SPEED 24 // Frames per animation frame (higher = slower)
 
 // Forward declarations
 static void game_update(void *data);
