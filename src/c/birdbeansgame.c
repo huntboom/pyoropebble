@@ -17,6 +17,7 @@
 #define DEATH_DELAY 1.0f // Delay in seconds before showing game over screen
 #define MOUTH_ANIMATION_FRAMES 3 // Number of animation frames (closed, halfway, open)
 #define MOUTH_ANIMATION_SPEED 10 // Frames per animation cycle (higher = slower)
+#define ANGEL_SPEED 35.0f
 
 // Game state
 typedef struct {
@@ -33,16 +34,30 @@ typedef struct {
   } tongue;
 } Pyoro;
 
+typedef enum {
+  BEAN_TYPE_GREEN,
+  BEAN_TYPE_PINK
+} BeanType;
+
 typedef struct {
   float x, y;
   float speed;
   bool active;
   bool caught;
+  BeanType type;
 } Bean;
 
 typedef struct {
   bool exists;
+  bool is_repairing;
 } Block;
+
+typedef struct {
+  float x, y;
+  bool active;
+  int target_block_index; // Which block to repair
+  bool going_up; // true when going back up after repair
+} Angel;
 
 typedef enum {
   GAME_STATE_MENU,
@@ -55,6 +70,7 @@ typedef struct {
   Pyoro pyoro;
   Bean beans[5]; // Max 5 beans on screen
   Block blocks[GAME_WIDTH];
+  Angel angel;
   int score;
   float game_speed;
   float bean_spawn_timer;
@@ -85,6 +101,10 @@ static GBitmap *s_tongue_body_left_bitmap;
 static GBitmap *s_green_bean_left_bitmap;
 static GBitmap *s_green_bean_middle_bitmap;
 static GBitmap *s_green_bean_right_bitmap;
+static GBitmap *s_pink_bean_left_bitmap;
+static GBitmap *s_pink_bean_middle_bitmap;
+static GBitmap *s_pink_bean_right_bitmap;
+static GBitmap *s_angel_bitmap;
 static uint32_t s_last_movement_press_frame = 0;
 static uint32_t s_frame_count = 0;
 #define BEAN_ANIMATION_SPEED 24 // Frames per animation frame (higher = slower)
@@ -119,18 +139,33 @@ static void init_game(void) {
   // Initialize blocks
   for (int i = 0; i < GAME_WIDTH; i++) {
     s_game.blocks[i].exists = true;
+    s_game.blocks[i].is_repairing = false;
   }
   
   // Initialize beans
   for (int i = 0; i < 5; i++) {
     s_game.beans[i].active = false;
+    s_game.beans[i].type = BEAN_TYPE_GREEN;
   }
+  
+  // Initialize angel
+  s_game.angel.active = false;
 }
 
 static void reset_game(void) {
   init_game();
   s_game.state = GAME_STATE_PLAYING;
   layer_mark_dirty(s_game_layer);
+}
+
+// Find a destroyed block that can be repaired
+static int find_destroyed_block(void) {
+  for (int i = 0; i < GAME_WIDTH; i++) {
+    if (!s_game.blocks[i].exists && !s_game.blocks[i].is_repairing) {
+      return i;
+    }
+  }
+  return -1;
 }
 
 // Spawn a new bean
@@ -142,9 +177,38 @@ static void spawn_bean(void) {
       s_game.beans[i].speed = (rand() % 100) / 100.0f * 1.0f + 0.5f;
       s_game.beans[i].active = true;
       s_game.beans[i].caught = false;
+      
+      // Check if we should spawn a pink bean (only if there's a destroyed block)
+      int destroyed_block = find_destroyed_block();
+      if (destroyed_block >= 0 && (rand() % 5) < 2) {
+        // 40% chance to spawn pink bean if blocks are destroyed
+        s_game.beans[i].type = BEAN_TYPE_PINK;
+      } else {
+        s_game.beans[i].type = BEAN_TYPE_GREEN;
+      }
       break;
     }
   }
+}
+
+// Spawn an angel to repair a block
+static void spawn_angel(int block_index) {
+  if (block_index < 0 || block_index >= GAME_WIDTH) {
+    return;
+  }
+  if (s_game.blocks[block_index].exists || s_game.blocks[block_index].is_repairing) {
+    return;
+  }
+  if (s_game.angel.active) {
+    return; // Only one angel at a time
+  }
+  
+  s_game.angel.active = true;
+  s_game.angel.x = block_index + 0.5f;
+  s_game.angel.y = 0.0f;
+  s_game.angel.target_block_index = block_index;
+  s_game.angel.going_up = false;
+  s_game.blocks[block_index].is_repairing = true;
 }
 
 // Collision detection
@@ -244,22 +308,34 @@ static void update_game(float delta_time) {
       // Check if tongue is back
       if (s_game.pyoro.tongue.y >= s_game.pyoro.y) {
         if (s_game.pyoro.tongue.caught_bean) {
-          // Calculate score based on height
-          int score_add = 10;
-          if (s_game.pyoro.tongue.y < GAME_HEIGHT * 0.2f) {
-            score_add = 1000;
-          } else if (s_game.pyoro.tongue.y < GAME_HEIGHT * 0.4f) {
-            score_add = 300;
-          } else if (s_game.pyoro.tongue.y < GAME_HEIGHT * 0.6f) {
-            score_add = 100;
-          } else if (s_game.pyoro.tongue.y < GAME_HEIGHT * 0.8f) {
-            score_add = 50;
-          }
-          s_game.score += score_add;
-          
-          // Remove caught bean
+          // Find the caught bean and check its type
+          BeanType caught_bean_type = BEAN_TYPE_GREEN;
           for (int i = 0; i < 5; i++) {
             if (s_game.beans[i].active && s_game.beans[i].caught) {
+              caught_bean_type = s_game.beans[i].type;
+              
+              // If it's a pink bean, spawn an angel to repair a block
+              if (caught_bean_type == BEAN_TYPE_PINK) {
+                int destroyed_block = find_destroyed_block();
+                if (destroyed_block >= 0) {
+                  spawn_angel(destroyed_block);
+                }
+              }
+              
+              // Calculate score based on height
+              int score_add = 10;
+              if (s_game.pyoro.tongue.y < GAME_HEIGHT * 0.2f) {
+                score_add = 1000;
+              } else if (s_game.pyoro.tongue.y < GAME_HEIGHT * 0.4f) {
+                score_add = 300;
+              } else if (s_game.pyoro.tongue.y < GAME_HEIGHT * 0.6f) {
+                score_add = 100;
+              } else if (s_game.pyoro.tongue.y < GAME_HEIGHT * 0.8f) {
+                score_add = 50;
+              }
+              s_game.score += score_add;
+              
+              // Remove caught bean
               s_game.beans[i].active = false;
               break;
             }
@@ -323,6 +399,34 @@ static void update_game(float delta_time) {
           }
         }
         s_game.beans[i].active = false;
+      }
+    }
+  }
+  
+  // Update angel
+  if (s_game.angel.active) {
+    if (!s_game.angel.going_up) {
+      // Angel falling down
+      s_game.angel.y += ANGEL_SPEED * dt;
+      
+      // Check if angel reached the block
+      if (s_game.angel.y >= GAME_HEIGHT - 1.0f) {
+        // Repair the block
+        int block_idx = s_game.angel.target_block_index;
+        if (block_idx >= 0 && block_idx < GAME_WIDTH) {
+          s_game.blocks[block_idx].exists = true;
+          s_game.blocks[block_idx].is_repairing = false;
+        }
+        // Start going back up
+        s_game.angel.going_up = true;
+      }
+    } else {
+      // Angel going back up
+      s_game.angel.y -= ANGEL_SPEED * dt;
+      
+      // Check if angel exited the screen
+      if (s_game.angel.y < 0.0f) {
+        s_game.angel.active = false;
       }
     }
   }
@@ -627,16 +731,32 @@ static void game_layer_update_callback(Layer *layer, GContext *ctx) {
       int animation_frame = (s_frame_count / BEAN_ANIMATION_SPEED + i) % 3;
       
       GBitmap *bean_bitmap = NULL;
-      switch (animation_frame) {
-        case 0:
-          bean_bitmap = s_green_bean_left_bitmap;
-          break;
-        case 1:
-          bean_bitmap = s_green_bean_middle_bitmap;
-          break;
-        case 2:
-          bean_bitmap = s_green_bean_right_bitmap;
-          break;
+      if (s_game.beans[i].type == BEAN_TYPE_PINK) {
+        // Pink bean animation
+        switch (animation_frame) {
+          case 0:
+            bean_bitmap = s_pink_bean_left_bitmap;
+            break;
+          case 1:
+            bean_bitmap = s_pink_bean_middle_bitmap;
+            break;
+          case 2:
+            bean_bitmap = s_pink_bean_right_bitmap;
+            break;
+        }
+      } else {
+        // Green bean animation
+        switch (animation_frame) {
+          case 0:
+            bean_bitmap = s_green_bean_left_bitmap;
+            break;
+          case 1:
+            bean_bitmap = s_green_bean_middle_bitmap;
+            break;
+          case 2:
+            bean_bitmap = s_green_bean_right_bitmap;
+            break;
+        }
       }
       
       if (bean_bitmap) {
@@ -657,14 +777,39 @@ static void game_layer_update_callback(Layer *layer, GContext *ctx) {
         graphics_draw_bitmap_in_rect(ctx, bean_bitmap, bitmap_rect);
         graphics_context_set_compositing_mode(ctx, GCompOpAssign);
       } else {
-        // Fallback to green rectangle if bitmap not loaded
-        graphics_context_set_fill_color(ctx, GColorGreen);
+        // Fallback to colored rectangle if bitmap not loaded
+        graphics_context_set_fill_color(ctx, s_game.beans[i].type == BEAN_TYPE_PINK ? GColorFolly : GColorGreen);
         int bean_x = (int)((s_game.beans[i].x - BEAN_SIZE/2.0f) * scale_x);
         int bean_y = 20 + (int)((s_game.beans[i].y - BEAN_SIZE/2.0f) * scale_y);
         int bean_w = (int)(BEAN_SIZE * scale_x);
         int bean_h = (int)(BEAN_SIZE * scale_y);
         graphics_fill_rect(ctx, GRect(bean_x, bean_y, bean_w, bean_h), 0, GCornerNone);
       }
+    }
+  }
+  
+  // Draw angel
+  if (s_game.angel.active) {
+    if (s_angel_bitmap) {
+      int angel_center_x = (int)(s_game.angel.x * scale_x);
+      int angel_center_y = 20 + (int)(s_game.angel.y * scale_y);
+      
+      GRect bitmap_bounds = gbitmap_get_bounds(s_angel_bitmap);
+      int bitmap_x = angel_center_x - bitmap_bounds.size.w / 2;
+      int bitmap_y = angel_center_y - bitmap_bounds.size.h / 2;
+      GRect bitmap_rect = GRect(bitmap_x, bitmap_y, bitmap_bounds.size.w, bitmap_bounds.size.h);
+      
+      graphics_context_set_compositing_mode(ctx, GCompOpSet);
+      graphics_draw_bitmap_in_rect(ctx, s_angel_bitmap, bitmap_rect);
+      graphics_context_set_compositing_mode(ctx, GCompOpAssign);
+    } else {
+      // Fallback to white rectangle if bitmap not loaded
+      graphics_context_set_fill_color(ctx, GColorWhite);
+      int angel_x = (int)((s_game.angel.x - BEAN_SIZE/2.0f) * scale_x);
+      int angel_y = 20 + (int)((s_game.angel.y - BEAN_SIZE/2.0f) * scale_y);
+      int angel_w = (int)(BEAN_SIZE * scale_x);
+      int angel_h = (int)(BEAN_SIZE * scale_y);
+      graphics_fill_rect(ctx, GRect(angel_x, angel_y, angel_w, angel_h), 0, GCornerNone);
     }
   }
 }
@@ -771,6 +916,12 @@ static void prv_window_load(Window *window) {
   s_green_bean_left_bitmap = gbitmap_create_with_resource(RESOURCE_ID_GREEN_BEAN_LEFT);
   s_green_bean_middle_bitmap = gbitmap_create_with_resource(RESOURCE_ID_GREEN_BEAN_MIDDLE);
   s_green_bean_right_bitmap = gbitmap_create_with_resource(RESOURCE_ID_GREEN_BEAN_RIGHT);
+  s_pink_bean_left_bitmap = gbitmap_create_with_resource(RESOURCE_ID_PINK_BEAN_LEFT);
+  s_pink_bean_middle_bitmap = gbitmap_create_with_resource(RESOURCE_ID_PINK_BEAN_MIDDLE);
+  s_pink_bean_right_bitmap = gbitmap_create_with_resource(RESOURCE_ID_PINK_BEAN_RIGHT);
+  
+  // Load angel bitmap
+  s_angel_bitmap = gbitmap_create_with_resource(RESOURCE_ID_ANGEL);
   
   init_game();
 }
@@ -847,6 +998,22 @@ static void prv_window_unload(Window *window) {
   if (s_green_bean_right_bitmap) {
     gbitmap_destroy(s_green_bean_right_bitmap);
     s_green_bean_right_bitmap = NULL;
+  }
+  if (s_pink_bean_left_bitmap) {
+    gbitmap_destroy(s_pink_bean_left_bitmap);
+    s_pink_bean_left_bitmap = NULL;
+  }
+  if (s_pink_bean_middle_bitmap) {
+    gbitmap_destroy(s_pink_bean_middle_bitmap);
+    s_pink_bean_middle_bitmap = NULL;
+  }
+  if (s_pink_bean_right_bitmap) {
+    gbitmap_destroy(s_pink_bean_right_bitmap);
+    s_pink_bean_right_bitmap = NULL;
+  }
+  if (s_angel_bitmap) {
+    gbitmap_destroy(s_angel_bitmap);
+    s_angel_bitmap = NULL;
   }
   layer_destroy(s_game_layer);
   text_layer_destroy(s_score_layer);

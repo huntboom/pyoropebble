@@ -109,6 +109,26 @@
           "type": "bitmap",
           "name": "GREEN_BEAN_RIGHT",
           "file": "images/greenbeanright.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "PINK_BEAN_LEFT",
+          "file": "images/pinkbeanleft.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "PINK_BEAN_MIDDLE",
+          "file": "images/pinkbeanmiddle.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "PINK_BEAN_RIGHT",
+          "file": "images/pinkbeanright.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "ANGEL",
+          "file": "images/angel.png"
         }
       ]
     }
