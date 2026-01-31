@@ -6,7 +6,8 @@
 #define GAME_WIDTH 20
 #define GAME_HEIGHT 20
 #define BLOCK_SIZE 8
-#define PYORO_SIZE 3
+#define PYORO_SIZE 3 // Collision/physics size
+#define PYORO_VISUAL_SIZE 5 // Visual sprite size for tongue positioning
 #define BEAN_SIZE 2
 #define TONGUE_WIDTH 2
 #define TONGUE_SPEED 15.0f
@@ -25,6 +26,7 @@ typedef struct {
   int direction; // 1 = right, -1 = left
   bool moving;
   bool dead;
+  bool button_held; // Track if button is being held vs single click
   struct {
     bool active;
     float x, y;
@@ -134,6 +136,7 @@ static void init_game(void) {
   s_game.pyoro.direction = 1;
   s_game.pyoro.moving = false;
   s_game.pyoro.dead = false;
+  s_game.pyoro.button_held = false;
   s_game.pyoro.tongue.active = false;
   
   // Initialize blocks
@@ -259,7 +262,16 @@ static void update_game(float delta_time) {
   }
   
   if (s_game.pyoro.moving && !s_game.pyoro.tongue.active) {
-    float move_speed = PYORO_SPEED * dt;
+    float move_speed;
+    if (s_game.pyoro.button_held) {
+      // Button is held - use normal speed for continuous movement
+      move_speed = PYORO_SPEED * dt;
+    } else {
+      // Single click - use smaller fixed movement
+      move_speed = 0.1f; // Small fixed movement per click
+      s_game.pyoro.moving = false; // Stop after single movement
+    }
+    
     float new_x = s_game.pyoro.x + s_game.pyoro.direction * move_speed;
     
     // Check boundaries
@@ -601,8 +613,9 @@ static void game_layer_update_callback(Layer *layer, GContext *ctx) {
   // Draw tongue
   if (s_game.pyoro.tongue.active) {
     // Calculate tongue start position (where it leaves the bird)
-    float tongue_start_x = s_game.pyoro.x + (PYORO_SIZE/2.0f + 0.6f) * s_game.pyoro.direction;
-    float tongue_start_y = s_game.pyoro.y - PYORO_SIZE/2.0f + 0.6f;
+    // Use PYORO_VISUAL_SIZE for positioning to match the actual sprite size
+    float tongue_start_x = s_game.pyoro.x + (PYORO_VISUAL_SIZE/2.0f + 0.6f) * s_game.pyoro.direction;
+    float tongue_start_y = s_game.pyoro.y - PYORO_VISUAL_SIZE/2.0f + 0.6f;
     
     // Calculate tip position
     float tongue_tip_x = s_game.pyoro.tongue.x;
@@ -833,8 +846,9 @@ static void prv_select_click_handler(ClickRecognizerRef recognizer, void *contex
     if (!s_game.pyoro.tongue.active) {
       s_game.pyoro.moving = false;
       s_game.pyoro.tongue.active = true;
-      s_game.pyoro.tongue.x = s_game.pyoro.x + (PYORO_SIZE/2.0f + 0.6f) * s_game.pyoro.direction;
-      s_game.pyoro.tongue.y = s_game.pyoro.y - PYORO_SIZE/2.0f + 0.6f;
+      // Use PYORO_VISUAL_SIZE for positioning to match the actual sprite size
+      s_game.pyoro.tongue.x = s_game.pyoro.x + (PYORO_VISUAL_SIZE/2.0f + 0.6f) * s_game.pyoro.direction;
+      s_game.pyoro.tongue.y = s_game.pyoro.y - PYORO_VISUAL_SIZE/2.0f + 0.6f;
       s_game.pyoro.tongue.direction = s_game.pyoro.direction;
       s_game.pyoro.tongue.going_back = false;
       s_game.pyoro.tongue.caught_bean = false;
@@ -846,6 +860,7 @@ static void prv_up_click_handler(ClickRecognizerRef recognizer, void *context) {
   if (s_game.state == GAME_STATE_PLAYING && !s_game.pyoro.dead && !s_game.pyoro.tongue.active) {
     s_game.pyoro.direction = -1;
     s_game.pyoro.moving = true;
+    s_game.pyoro.button_held = false; // Single click - small movement
     s_last_movement_press_frame = s_frame_count;
   }
 }
@@ -854,6 +869,25 @@ static void prv_down_click_handler(ClickRecognizerRef recognizer, void *context)
   if (s_game.state == GAME_STATE_PLAYING && !s_game.pyoro.dead && !s_game.pyoro.tongue.active) {
     s_game.pyoro.direction = 1;
     s_game.pyoro.moving = true;
+    s_game.pyoro.button_held = false; // Single click - small movement
+    s_last_movement_press_frame = s_frame_count;
+  }
+}
+
+static void prv_up_repeating_click_handler(ClickRecognizerRef recognizer, void *context) {
+  if (s_game.state == GAME_STATE_PLAYING && !s_game.pyoro.dead && !s_game.pyoro.tongue.active) {
+    s_game.pyoro.direction = -1;
+    s_game.pyoro.moving = true;
+    s_game.pyoro.button_held = true; // Button held - continuous movement
+    s_last_movement_press_frame = s_frame_count;
+  }
+}
+
+static void prv_down_repeating_click_handler(ClickRecognizerRef recognizer, void *context) {
+  if (s_game.state == GAME_STATE_PLAYING && !s_game.pyoro.dead && !s_game.pyoro.tongue.active) {
+    s_game.pyoro.direction = 1;
+    s_game.pyoro.moving = true;
+    s_game.pyoro.button_held = true; // Button held - continuous movement
     s_last_movement_press_frame = s_frame_count;
   }
 }
@@ -861,9 +895,9 @@ static void prv_down_click_handler(ClickRecognizerRef recognizer, void *context)
 static void prv_click_config_provider(void *context) {
   window_single_click_subscribe(BUTTON_ID_SELECT, prv_select_click_handler);
   window_single_click_subscribe(BUTTON_ID_UP, prv_up_click_handler);
-  window_single_repeating_click_subscribe(BUTTON_ID_UP, 100, prv_up_click_handler);
+  window_single_repeating_click_subscribe(BUTTON_ID_UP, 100, prv_up_repeating_click_handler);
   window_single_click_subscribe(BUTTON_ID_DOWN, prv_down_click_handler);
-  window_single_repeating_click_subscribe(BUTTON_ID_DOWN, 100, prv_down_click_handler);
+  window_single_repeating_click_subscribe(BUTTON_ID_DOWN, 100, prv_down_repeating_click_handler);
 }
 
 static void prv_window_load(Window *window) {
