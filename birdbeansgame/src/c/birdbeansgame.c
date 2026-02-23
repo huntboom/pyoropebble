@@ -21,7 +21,9 @@
 #define ANGEL_SPEED 35.0f
 #define NUM_BACKGROUNDS 21
 #define SCORE_PER_BACKGROUND 40 // Score points per background step (slow progression)
-
+#define NUM_HIGH_SCORES 10
+#define PERSIST_KEY_HIGH_SCORES 1
+#define HIGH_SCORE_EMPTY (-1)
 
 // Game state
 typedef struct {
@@ -91,6 +93,8 @@ static AppTimer *s_game_timer;
 static Game s_game;
 static GBitmap *s_background_bitmap;
 static int s_background_index = 0;
+static int s_high_scores[NUM_HIGH_SCORES];
+static int s_last_game_score = 0;
 static const uint32_t s_background_resource_ids[NUM_BACKGROUNDS] = {
   RESOURCE_ID_BACKGROUND_0, RESOURCE_ID_BACKGROUND_1, RESOURCE_ID_BACKGROUND_2,
   RESOURCE_ID_BACKGROUND_3, RESOURCE_ID_BACKGROUND_4, RESOURCE_ID_BACKGROUND_5,
@@ -133,6 +137,40 @@ static void spawn_bean(void);
 static void update_game(float delta_time);
 static bool check_collision(float x1, float y1, float w1, float h1,
                          float x2, float y2, float w2, float h2);
+
+// High scores (persistent)
+static void load_high_scores(void) {
+  for (int i = 0; i < NUM_HIGH_SCORES; i++) {
+    s_high_scores[i] = HIGH_SCORE_EMPTY;
+  }
+  if (persist_exists(PERSIST_KEY_HIGH_SCORES)) {
+    persist_read_data(PERSIST_KEY_HIGH_SCORES, s_high_scores,
+                      sizeof(s_high_scores));
+  }
+}
+
+static void save_high_scores(void) {
+  persist_write_data(PERSIST_KEY_HIGH_SCORES, s_high_scores,
+                    sizeof(s_high_scores));
+}
+
+static void insert_high_score(int score) {
+  int insert_at = -1;
+  for (int i = 0; i < NUM_HIGH_SCORES; i++) {
+    if (s_high_scores[i] == HIGH_SCORE_EMPTY || score > s_high_scores[i]) {
+      insert_at = i;
+      break;
+    }
+  }
+  if (insert_at < 0) {
+    return; // Not in top 10
+  }
+  for (int i = NUM_HIGH_SCORES - 1; i > insert_at; i--) {
+    s_high_scores[i] = s_high_scores[i - 1];
+  }
+  s_high_scores[insert_at] = score;
+  save_high_scores();
+}
 
 // Initialize game
 static void init_game(void) {
@@ -253,6 +291,8 @@ static void update_game(float delta_time) {
   if (s_game.pyoro.dead) {
     s_game.death_timer -= delta_time;
     if (s_game.death_timer <= 0.0f) {
+      s_last_game_score = s_game.score;
+      insert_high_score(s_game.score);
       s_game.state = GAME_STATE_GAME_OVER;
     }
     // Don't update game logic while dead, but keep rendering
@@ -526,18 +566,9 @@ static void game_layer_update_callback(Layer *layer, GContext *ctx) {
   }
   
   if (s_game.state == GAME_STATE_GAME_OVER) {
-    graphics_context_set_text_color(ctx, GColorWhite);
-    graphics_draw_text(ctx, "GAME OVER", fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
-                      GRect(0, screen_height/2 - 20, screen_width, 30),
-                      GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
-    static char final_score[30];
-    snprintf(final_score, sizeof(final_score), "Score: %d", s_game.score);
-    graphics_draw_text(ctx, final_score, fonts_get_system_font(FONT_KEY_GOTHIC_18),
-                      GRect(0, screen_height/2 + 10, screen_width, 20),
-                      GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
-    return;
+    // Fall through to draw game scene, then overlay at end
   }
-  
+
   // Draw blocks
   for (int i = 0; i < GAME_WIDTH; i++) {
     if (s_game.blocks[i].exists) {
@@ -863,6 +894,45 @@ static void game_layer_update_callback(Layer *layer, GContext *ctx) {
       graphics_fill_rect(ctx, GRect(angel_x, angel_y, angel_w, angel_h), 0, GCornerNone);
     }
   }
+
+  // Game over overlay: top 10 scores + your score, drawn on top of the game
+  if (s_game.state == GAME_STATE_GAME_OVER) {
+    graphics_context_set_fill_color(ctx, GColorBlack);
+    graphics_fill_rect(ctx, GRect(2, 18, screen_width - 4, screen_height - 22), 4, GCornerNone);
+    graphics_context_set_text_color(ctx, GColorWhite);
+    graphics_draw_text(ctx, "GAME OVER", fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
+                      GRect(0, 22, screen_width, 28),
+                      GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+    static char your_score_buf[32];
+    snprintf(your_score_buf, sizeof(your_score_buf), "Your score: %d", s_last_game_score);
+    graphics_draw_text(ctx, your_score_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18),
+                      GRect(0, 48, screen_width, 22),
+                      GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+    graphics_draw_text(ctx, "TOP 10", fonts_get_system_font(FONT_KEY_GOTHIC_18),
+                      GRect(0, 68, screen_width, 20),
+                      GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+    int y = 86;
+    const int line_h = 12;
+    for (int i = 0; i < NUM_HIGH_SCORES; i++) {
+      static char line_buf[24];
+      if (s_high_scores[i] == HIGH_SCORE_EMPTY) {
+        snprintf(line_buf, sizeof(line_buf), "%2d. ---", i + 1);
+      } else {
+        snprintf(line_buf, sizeof(line_buf), "%2d. %d", i + 1, s_high_scores[i]);
+      }
+      if (s_high_scores[i] == s_last_game_score && s_last_game_score != HIGH_SCORE_EMPTY) {
+        graphics_context_set_text_color(ctx, GColorYellow);
+      }
+      graphics_draw_text(ctx, line_buf, fonts_get_system_font(FONT_KEY_GOTHIC_14),
+                        GRect(10, y, screen_width - 20, line_h),
+                        GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
+      graphics_context_set_text_color(ctx, GColorWhite);
+      y += line_h;
+    }
+    graphics_draw_text(ctx, "SELECT: menu", fonts_get_system_font(FONT_KEY_GOTHIC_14),
+                      GRect(0, screen_height - 18, screen_width, 18),
+                      GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+  }
 }
 
 // Game timer callback
@@ -995,6 +1065,7 @@ static void prv_window_load(Window *window) {
   // Load angel bitmap
   s_angel_bitmap = gbitmap_create_with_resource(RESOURCE_ID_ANGEL);
   
+  load_high_scores();
   init_game();
 }
 
