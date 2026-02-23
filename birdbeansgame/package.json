@@ -1,0 +1,236 @@
+{
+  "name": "birdbeansgame",
+  "author": "MakeAwesomeHappen",
+  "version": "1.0.0",
+  "keywords": ["pebble-app"],
+  "private": true,
+  "dependencies": {},
+  "pebble": {
+    "displayName": "birdbeansgame",
+    "uuid": "b49e4548-36b8-46b7-989c-de03fd65d6ba",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery"
+    ],
+    "watchapp": {
+      "watchface": false
+    },
+    "messageKeys": [
+      "dummy"
+    ],
+    "resources": {
+      "media": [
+        {
+          "type": "bitmap",
+          "name": "BACKGROUND_0",
+          "file": "background 1/background_0.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BACKGROUND_1",
+          "file": "background 1/background_1.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BACKGROUND_2",
+          "file": "background 1/background_2.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BACKGROUND_3",
+          "file": "background 1/background_3.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BACKGROUND_4",
+          "file": "background 1/background_4.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BACKGROUND_5",
+          "file": "background 1/background_5.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BACKGROUND_6",
+          "file": "background 1/background_6.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BACKGROUND_7",
+          "file": "background 1/background_7.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BACKGROUND_8",
+          "file": "background 1/background_8.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BACKGROUND_9",
+          "file": "background 1/background_9.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BACKGROUND_10",
+          "file": "background 1/background_10.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BACKGROUND_11",
+          "file": "background 1/background_11.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BACKGROUND_12",
+          "file": "background 1/background_12.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BACKGROUND_13",
+          "file": "background 1/background_13.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BACKGROUND_14",
+          "file": "background 1/background_14.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BACKGROUND_15",
+          "file": "background 1/background_15.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BACKGROUND_16",
+          "file": "background 1/background_16.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BACKGROUND_17",
+          "file": "background 1/background_17.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BACKGROUND_18",
+          "file": "background 1/background_18.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BACKGROUND_19",
+          "file": "background 1/background_19.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BACKGROUND_20",
+          "file": "background 1/background_20.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "PYORO_RIGHT",
+          "file": "images/pyororight.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "PYORO_LEFT",
+          "file": "images/pyoroleft.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "PYORO_MOUTH_HALFWAY_OPEN_RIGHT",
+          "file": "images/pyoromouthhalfwayopenright.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "PYORO_MOUTH_HALFWAY_OPEN_LEFT",
+          "file": "images/pyoromouthhalfwayopenleft.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "PYORO_MOUTH_OPEN_RIGHT",
+          "file": "images/pyoromouthopenright.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "PYORO_MOUTH_OPEN_LEFT",
+          "file": "images/pyoromouthopenleft.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BLOCK",
+          "file": "images/block_0.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "TONGUE",
+          "file": "images/tongue_0_1.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "TONGUE_LEFT",
+          "file": "images/tongueleft.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "TONGUE_BODY_RIGHT",
+          "file": "images/tonguebodyright.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "TONGUE_BODY_LEFT",
+          "file": "images/tonguebodyleft.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "PYORO_DEAD_LEFT",
+          "file": "images/pyorodeadleft.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "PYORO_DEAD_RIGHT",
+          "file": "images/pyorodeadright.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "GREEN_BEAN_LEFT",
+          "file": "images/greenbeanleft.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "GREEN_BEAN_MIDDLE",
+          "file": "images/greenbeanmiddle.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "GREEN_BEAN_RIGHT",
+          "file": "images/greenbeanright.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "PINK_BEAN_LEFT",
+          "file": "images/pinkbeanleft.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "PINK_BEAN_MIDDLE",
+          "file": "images/pinkbeanmiddle.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "PINK_BEAN_RIGHT",
+          "file": "images/pinkbeanright.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "ANGEL",
+          "file": "images/angel.png"
+        }
+      ]
+    }
+  }
+}
