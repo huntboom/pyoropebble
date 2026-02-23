@@ -13,6 +13,8 @@
 #define TONGUE_SPEED 15.0f
 #define BEAN_SPEED 1.8f
 #define PYORO_SPEED 25.0f
+#define PYORO_SINGLE_STEP 0.25f   // Game units per queued step (tiny step)
+#define PYORO_PENDING_STEPS_MAX 60
 #define BEAN_SPAWN_FREQUENCY 2.0f
 #define SPEED_ACCELERATION 0.01f
 #define DEATH_DELAY 1.0f // Delay in seconds before showing game over screen
@@ -124,9 +126,12 @@ static GBitmap *s_pink_bean_left_bitmap;
 static GBitmap *s_pink_bean_middle_bitmap;
 static GBitmap *s_pink_bean_right_bitmap;
 static GBitmap *s_angel_bitmap;
-static uint32_t s_last_movement_press_frame = 0;
 static uint32_t s_frame_count = 0;
 #define BEAN_ANIMATION_SPEED 24 // Frames per animation frame (higher = slower)
+
+// Step queue: one small step per unit; drain one per frame. Enables tap=tiny step, hold=walk.
+static int s_pending_step_dir = 0;   // -1 left, 0 none, 1 right
+static int s_pending_step_count = 0;
 
 // Forward declarations
 static void game_update(void *data);
@@ -137,6 +142,25 @@ static void spawn_bean(void);
 static void update_game(float delta_time);
 static bool check_collision(float x1, float y1, float w1, float h1,
                          float x2, float y2, float w2, float h2);
+
+// Apply one horizontal step for Pyoro (used by step queue). Returns true if moved.
+static bool apply_pyoro_step(int step_dir) {
+  float new_x = s_game.pyoro.x + step_dir * PYORO_SINGLE_STEP;
+  if (new_x < PYORO_SIZE / 2.0f) {
+    new_x = PYORO_SIZE / 2.0f;
+  } else if (new_x > GAME_WIDTH - PYORO_SIZE / 2.0f) {
+    new_x = GAME_WIDTH - PYORO_SIZE / 2.0f;
+  }
+  int block_left = (int)(new_x - PYORO_SIZE / 2.0f);
+  int block_right = (int)(new_x + PYORO_SIZE / 2.0f);
+  for (int i = block_left; i <= block_right && i < GAME_WIDTH; i++) {
+    if (i >= 0 && !s_game.blocks[i].exists) {
+      return false;
+    }
+  }
+  s_game.pyoro.x = new_x;
+  return true;
+}
 
 // High scores (persistent)
 static void load_high_scores(void) {
@@ -209,6 +233,8 @@ static void init_game(void) {
 static void reset_game(void) {
   init_game();
   s_game.state = GAME_STATE_PLAYING;
+  s_pending_step_dir = 0;
+  s_pending_step_count = 0;
   // Reset background to first image for new game
   s_background_index = 0;
   if (s_background_bitmap) {
@@ -305,58 +331,22 @@ static void update_game(float delta_time) {
   // Update game speed
   s_game.game_speed += dt * SPEED_ACCELERATION;
   
-  // Update Pyoro movement (stop if tongue is active)
+  // Update Pyoro movement: step queue only (no continuous "moving" state)
   if (s_game.pyoro.tongue.active) {
-    s_game.pyoro.moving = false;
+    s_pending_step_count = 0;
+    s_pending_step_dir = 0;
+  } else if (s_pending_step_count > 0 && s_pending_step_dir != 0) {
+    apply_pyoro_step(s_pending_step_dir);
+    s_pending_step_count--;
+    if (s_pending_step_count <= 0) {
+      s_pending_step_dir = 0;
+    }
   }
   
   // Increment frame counter
   s_frame_count++;
   
-  // Stop moving if button hasn't been pressed recently (button released)
-  // Check if it's been more than ~9 frames (150ms at 60fps) since last press
-  if (s_game.pyoro.moving) {
-    if (s_frame_count - s_last_movement_press_frame > 9) {
-      s_game.pyoro.moving = false;
-    }
-  }
-  
-  if (s_game.pyoro.moving && !s_game.pyoro.tongue.active) {
-    float move_speed;
-    if (s_game.pyoro.button_held) {
-      // Button is held - use normal speed for continuous movement
-      move_speed = PYORO_SPEED * dt;
-    } else {
-      // Single click - use smaller fixed movement
-      move_speed = 0.1f; // Small fixed movement per click
-      s_game.pyoro.moving = false; // Stop after single movement
-    }
-    
-    float new_x = s_game.pyoro.x + s_game.pyoro.direction * move_speed;
-    
-    // Check boundaries
-    if (new_x < PYORO_SIZE / 2.0f) {
-      new_x = PYORO_SIZE / 2.0f;
-    } else if (new_x > GAME_WIDTH - PYORO_SIZE / 2.0f) {
-      new_x = GAME_WIDTH - PYORO_SIZE / 2.0f;
-    }
-    
-    // Check for holes in blocks
-    int block_left = (int)(new_x - PYORO_SIZE / 2.0f);
-    int block_right = (int)(new_x + PYORO_SIZE / 2.0f);
-    bool can_move = true;
-    
-    for (int i = block_left; i <= block_right && i < GAME_WIDTH; i++) {
-      if (i >= 0 && !s_game.blocks[i].exists) {
-        can_move = false;
-        break;
-      }
-    }
-    
-    if (can_move) {
-      s_game.pyoro.x = new_x;
-    }
-  }
+  // (Legacy moving/button_held no longer used for horizontal movement)
   
   // Update tongue
   if (s_game.pyoro.tongue.active) {
@@ -950,8 +940,10 @@ static void prv_select_click_handler(ClickRecognizerRef recognizer, void *contex
     s_game.state = GAME_STATE_MENU;
     layer_mark_dirty(s_game_layer);
   } else if (s_game.state == GAME_STATE_PLAYING && !s_game.pyoro.dead) {
-    // Extend tongue (stops movement)
+    // Extend tongue (clear any pending steps)
     if (!s_game.pyoro.tongue.active) {
+      s_pending_step_count = 0;
+      s_pending_step_dir = 0;
       s_game.pyoro.moving = false;
       s_game.pyoro.tongue.active = true;
       // Use PYORO_VISUAL_SIZE for positioning to match the actual sprite size
@@ -966,37 +958,71 @@ static void prv_select_click_handler(ClickRecognizerRef recognizer, void *contex
 
 static void prv_up_click_handler(ClickRecognizerRef recognizer, void *context) {
   if (s_game.state == GAME_STATE_PLAYING && !s_game.pyoro.dead && !s_game.pyoro.tongue.active) {
+    int was_dir = s_game.pyoro.direction;
     s_game.pyoro.direction = -1;
-    s_game.pyoro.moving = true;
-    s_game.pyoro.button_held = false; // Single click - small movement
-    s_last_movement_press_frame = s_frame_count;
+    if (was_dir == 1) {
+      // Opposite: turn in place only, no steps
+      s_pending_step_count = 0;
+      s_pending_step_dir = 0;
+    } else {
+      s_pending_step_dir = -1;
+      s_pending_step_count++;
+      if (s_pending_step_count > PYORO_PENDING_STEPS_MAX) {
+        s_pending_step_count = PYORO_PENDING_STEPS_MAX;
+      }
+    }
   }
 }
 
 static void prv_down_click_handler(ClickRecognizerRef recognizer, void *context) {
   if (s_game.state == GAME_STATE_PLAYING && !s_game.pyoro.dead && !s_game.pyoro.tongue.active) {
+    int was_dir = s_game.pyoro.direction;
     s_game.pyoro.direction = 1;
-    s_game.pyoro.moving = true;
-    s_game.pyoro.button_held = false; // Single click - small movement
-    s_last_movement_press_frame = s_frame_count;
+    if (was_dir == -1) {
+      // Opposite: turn in place only, no steps
+      s_pending_step_count = 0;
+      s_pending_step_dir = 0;
+    } else {
+      s_pending_step_dir = 1;
+      s_pending_step_count++;
+      if (s_pending_step_count > PYORO_PENDING_STEPS_MAX) {
+        s_pending_step_count = PYORO_PENDING_STEPS_MAX;
+      }
+    }
   }
 }
 
 static void prv_up_repeating_click_handler(ClickRecognizerRef recognizer, void *context) {
   if (s_game.state == GAME_STATE_PLAYING && !s_game.pyoro.dead && !s_game.pyoro.tongue.active) {
+    int was_dir = s_game.pyoro.direction;
     s_game.pyoro.direction = -1;
-    s_game.pyoro.moving = true;
-    s_game.pyoro.button_held = true; // Button held - continuous movement
-    s_last_movement_press_frame = s_frame_count;
+    if (was_dir == 1) {
+      s_pending_step_count = 0;
+      s_pending_step_dir = 0;
+    } else {
+      s_pending_step_dir = -1;
+      s_pending_step_count += 4;
+      if (s_pending_step_count > PYORO_PENDING_STEPS_MAX) {
+        s_pending_step_count = PYORO_PENDING_STEPS_MAX;
+      }
+    }
   }
 }
 
 static void prv_down_repeating_click_handler(ClickRecognizerRef recognizer, void *context) {
   if (s_game.state == GAME_STATE_PLAYING && !s_game.pyoro.dead && !s_game.pyoro.tongue.active) {
+    int was_dir = s_game.pyoro.direction;
     s_game.pyoro.direction = 1;
-    s_game.pyoro.moving = true;
-    s_game.pyoro.button_held = true; // Button held - continuous movement
-    s_last_movement_press_frame = s_frame_count;
+    if (was_dir == -1) {
+      s_pending_step_count = 0;
+      s_pending_step_dir = 0;
+    } else {
+      s_pending_step_dir = 1;
+      s_pending_step_count += 4;
+      if (s_pending_step_count > PYORO_PENDING_STEPS_MAX) {
+        s_pending_step_count = PYORO_PENDING_STEPS_MAX;
+      }
+    }
   }
 }
 
