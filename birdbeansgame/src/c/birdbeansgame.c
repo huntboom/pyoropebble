@@ -11,11 +11,11 @@
 #define BEAN_SIZE 2
 #define TONGUE_WIDTH 2
 #define TONGUE_SPEED 15.0f
-#define BEAN_SPEED 1.8f
+#define BEAN_SPEED 2.2f
 #define PYORO_SPEED 25.0f
 #define PYORO_SINGLE_STEP 0.25f   // Game units per queued step (tiny step)
 #define PYORO_PENDING_STEPS_MAX 60
-#define BEAN_SPAWN_FREQUENCY 2.0f
+#define BEAN_SPAWN_FREQUENCY 1.2f
 #define SPEED_ACCELERATION 0.01f
 #define DEATH_DELAY 1.0f // Delay in seconds before showing game over screen
 #define MOUTH_ANIMATION_FRAMES 3 // Number of animation frames (closed, halfway, open)
@@ -144,8 +144,10 @@ static bool check_collision(float x1, float y1, float w1, float h1,
                          float x2, float y2, float w2, float h2);
 
 // Apply one horizontal step for Pyoro (used by step queue). Returns true if moved.
+// Step size scales with game_speed so Pyoro moves faster as the game progresses.
 static bool apply_pyoro_step(int step_dir) {
-  float new_x = s_game.pyoro.x + step_dir * PYORO_SINGLE_STEP;
+  float step = PYORO_SINGLE_STEP * s_game.game_speed;
+  float new_x = s_game.pyoro.x + step_dir * step;
   if (new_x < PYORO_SIZE / 2.0f) {
     new_x = PYORO_SIZE / 2.0f;
   } else if (new_x > GAME_WIDTH - PYORO_SIZE / 2.0f) {
