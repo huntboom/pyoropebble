@@ -132,6 +132,12 @@
         },
         {
           "type": "bitmap",
+          "name": "MENU_ICON",
+          "file": "images/icon.png",
+          "menuIcon": true
+        },
+        {
+          "type": "bitmap",
           "name": "PYORO_RIGHT",
           "file": "images/pyororight.png"
         },

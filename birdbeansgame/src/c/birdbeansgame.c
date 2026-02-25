@@ -133,6 +133,9 @@ static uint32_t s_frame_count = 0;
 static int s_pending_step_dir = 0;   // -1 left, 0 none, 1 right
 static int s_pending_step_count = 0;
 
+// Single source of truth for game speed (tongue, beans, spawn rate). Reset in init/reset.
+static float s_physics_speed = 1.0f;
+
 // Forward declarations
 static void game_update(void *data);
 static void game_layer_update_callback(Layer *layer, GContext *ctx);
@@ -144,9 +147,9 @@ static bool check_collision(float x1, float y1, float w1, float h1,
                          float x2, float y2, float w2, float h2);
 
 // Apply one horizontal step for Pyoro (used by step queue). Returns true if moved.
-// Step size scales with game_speed so Pyoro moves faster as the game progresses.
+// Step size scales with s_physics_speed so Pyoro moves faster as the game progresses.
 static bool apply_pyoro_step(int step_dir) {
-  float step = PYORO_SINGLE_STEP * s_game.game_speed;
+  float step = PYORO_SINGLE_STEP * s_physics_speed;
   float new_x = s_game.pyoro.x + step_dir * step;
   if (new_x < PYORO_SIZE / 2.0f) {
     new_x = PYORO_SIZE / 2.0f;
@@ -202,6 +205,7 @@ static void insert_high_score(int score) {
 static void init_game(void) {
   s_game.state = GAME_STATE_MENU;
   s_game.score = 0;
+  s_physics_speed = 1.0f;
   s_game.game_speed = 1.0f;
   s_game.bean_spawn_timer = 0.0f;
   s_game.death_timer = 0.0f;
@@ -234,6 +238,8 @@ static void init_game(void) {
 
 static void reset_game(void) {
   init_game();
+  s_physics_speed = 1.0f;
+  s_game.game_speed = 1.0f;
   s_game.state = GAME_STATE_PLAYING;
   s_pending_step_dir = 0;
   s_pending_step_count = 0;
@@ -322,18 +328,21 @@ static void update_game(float delta_time) {
       s_last_game_score = s_game.score;
       insert_high_score(s_game.score);
       s_game.state = GAME_STATE_GAME_OVER;
+      if (s_game_timer) {
+        app_timer_cancel(s_game_timer);
+        s_game_timer = NULL;
+      }
     }
     // Don't update game logic while dead, but keep rendering
     layer_mark_dirty(s_game_layer);
     return;
   }
   
-  float dt = delta_time * s_game.game_speed;
+  float dt = delta_time * s_physics_speed;
+  s_physics_speed += dt * SPEED_ACCELERATION;
+  s_game.game_speed = s_physics_speed;
   
-  // Update game speed
-  s_game.game_speed += dt * SPEED_ACCELERATION;
-  
-  // Update Pyoro movement: step queue only (no continuous "moving" state)
+  // Update Pyoro movement:
   if (s_game.pyoro.tongue.active) {
     s_pending_step_count = 0;
     s_pending_step_dir = 0;
@@ -439,7 +448,7 @@ static void update_game(float delta_time) {
   // Update beans
   for (int i = 0; i < 5; i++) {
     if (s_game.beans[i].active && !s_game.beans[i].caught) {
-      s_game.beans[i].y += BEAN_SPEED * s_game.beans[i].speed * dt * s_game.game_speed;
+      s_game.beans[i].y += BEAN_SPEED * s_game.beans[i].speed * dt;
       
       // Check collision with Pyoro
       if (!s_game.pyoro.dead && !s_game.pyoro.tongue.active) {
@@ -497,7 +506,7 @@ static void update_game(float delta_time) {
   
   // Spawn new beans
   s_game.bean_spawn_timer += dt;
-  if (s_game.bean_spawn_timer >= BEAN_SPAWN_FREQUENCY / s_game.game_speed) {
+  if (s_game.bean_spawn_timer >= BEAN_SPAWN_FREQUENCY / s_physics_speed) {
     spawn_bean();
     s_game.bean_spawn_timer = 0.0f;
   }
@@ -939,6 +948,7 @@ static void prv_select_click_handler(ClickRecognizerRef recognizer, void *contex
     reset_game();
     s_game_timer = app_timer_register(16, game_update, NULL);
   } else if (s_game.state == GAME_STATE_GAME_OVER) {
+    init_game();  // Reset s_physics_speed, score, blocks, etc. for next playthrough
     s_game.state = GAME_STATE_MENU;
     layer_mark_dirty(s_game_layer);
   } else if (s_game.state == GAME_STATE_PLAYING && !s_game.pyoro.dead) {
