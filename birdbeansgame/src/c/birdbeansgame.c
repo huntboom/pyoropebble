@@ -756,24 +756,19 @@ static void game_layer_update_callback(Layer *layer, GContext *ctx) {
         float dir_x = dx * inv_distance;
         float dir_y = dy * inv_distance;
         
+        // Step slightly less than full width so segments overlap and close any gap
+        float step_game = body_width_game * 0.94f;
+        
         // Draw body segments from start towards tip
         for (int i = 0; i < num_segments; i++) {
-          float segment_pos = (float)i * body_width_game;
-          
-          // Stop before we would overlap the tip
+          float segment_pos = (float)i * step_game;
           if (segment_pos >= body_distance) {
             break;
           }
-          
           float seg_x = tongue_start_x + dir_x * segment_pos;
           float seg_y = tongue_start_y + dir_y * segment_pos;
-          
-          // Convert to screen coordinates and center the bitmap
-          // Use proper rounding instead of truncation to avoid staircase effect
-          // Adjust Y by +3 pixels to fix the "one pixel too high" issue
           int seg_screen_x = (int)(seg_x * scale_x + 0.5f) - body_width_px / 2;
           int seg_screen_y = 20 + (int)(seg_y * scale_y + 0.5f) - body_height_px / 2 + 3;
-          
           GRect body_rect = GRect(seg_screen_x, seg_screen_y, body_width_px, body_height_px);
           graphics_draw_bitmap_in_rect(ctx, tongue_body_bitmap, body_rect);
         }
